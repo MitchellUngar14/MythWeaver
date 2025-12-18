@@ -8,6 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { calculateModifier, formatModifier, rollDice } from '@/lib/utils';
+import { AIAssistant } from '@/components/dm/AIAssistant';
+
+const CHARACTER_QUICK_PROMPTS = [
+  { label: 'Backstory Ideas', prompt: 'Suggest a compelling backstory for my character based on their race and class.' },
+  { label: 'Stat Advice', prompt: 'What ability scores should I prioritize for my class? Explain the best stat distribution.' },
+  { label: 'Personality Traits', prompt: 'Suggest interesting personality traits, ideals, bonds, and flaws for my character.' },
+  { label: 'Level Up Tips', prompt: 'What should I consider when leveling up my character? Any feat or ability recommendations?' },
+];
 
 const CLASSES = ['Barbarian', 'Bard', 'Cleric', 'Druid', 'Fighter', 'Monk', 'Paladin', 'Ranger', 'Rogue', 'Sorcerer', 'Warlock', 'Wizard'];
 const RACES = ['Human', 'Elf', 'Dwarf', 'Halfling', 'Gnome', 'Half-Elf', 'Half-Orc', 'Tiefling', 'Dragonborn'];
@@ -579,6 +587,15 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
+
+      {/* AI Assistant */}
+      <AIAssistant
+        context="I'm editing my D&D 5e character. Help me with backstory ideas, ability scores, personality traits, and character development."
+        quickPrompts={CHARACTER_QUICK_PROMPTS}
+        title="Character Builder AI"
+        placeholder="Ask about your character..."
+        emptyStateText="Need help with your character? Ask me!"
+      />
     </div>
   );
 }

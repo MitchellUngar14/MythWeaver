@@ -63,6 +63,7 @@ export function AIAssistant({
         body: JSON.stringify({
           message: userMessage.content,
           worldId,
+          context,
           conversationHistory: messages.map(m => ({
             role: m.role,
             content: m.content,

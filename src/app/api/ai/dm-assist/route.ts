@@ -17,14 +17,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (!session.user.isDm) {
-      return new Response(JSON.stringify({ error: 'DM access required' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
 
-    const { message, worldId, conversationHistory = [] } = await req.json();
+    const { message, worldId, context: customContext, conversationHistory = [] } = await req.json();
 
     if (!message) {
       return new Response(JSON.stringify({ error: 'Message is required' }), {
@@ -33,8 +27,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Gather context if worldId is provided
-    let context = '';
+    // Gather context - use custom context if provided, or gather from worldId
+    let context = customContext || '';
 
     if (worldId) {
       // Get world details
@@ -95,19 +89,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Build the system prompt
-    const systemPrompt = `You are an experienced Dungeon Master assistant for a D&D 5e game.
-You help the DM with storytelling, rulings, NPC dialogue, and encounter management.
+    const systemPrompt = `You are an experienced D&D 5e assistant helping with game-related tasks.
+You can help with:
+- Character creation: backstories, ability scores, personality traits, class features
+- Enemy/monster building: stats, abilities, CR calculations, thematic attacks
+- DM tasks: storytelling, rulings, NPC dialogue, encounter management
 
 Your responses should be:
 - Flavorful and immersive when providing narrative content
-- Clear and concise when giving rulings or advice
-- In-character when generating NPC dialogue (use quotation marks)
-- Practical and actionable when suggesting encounter tactics
+- Clear and concise when giving rulings or mechanical advice
+- Practical and actionable with specific suggestions
+- Accurate to D&D 5e rules and conventions
 
-When suggesting dice checks, include the DC and skill/ability.
-When generating NPC dialogue, consider their personality and motivation.
+When suggesting stats, explain your reasoning.
 Keep responses focused and not too long unless specifically asked for detail.
-${context}`;
+${context ? `\nCONTEXT: ${context}` : ''}`;
 
     // Build messages array
     const messages = [
