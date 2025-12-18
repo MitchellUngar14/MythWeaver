@@ -5,11 +5,15 @@ import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
 
 export function SignOutButton() {
+  const handleSignOut = () => {
+    signOut({ callbackUrl: window.location.origin });
+  };
+
   return (
     <Button
       variant="ghost"
       size="sm"
-      onClick={() => signOut({ callbackUrl: '/' })}
+      onClick={handleSignOut}
     >
       <LogOut className="w-5 h-5" />
     </Button>

@@ -6,10 +6,9 @@ import {
   ChevronDown, Loader2, Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ReactMarkdown from 'react-markdown';
 
-interface AIAssistantProps {
-  worldId?: string;
-}
+interface QuickPrompt {  label: string;  prompt: string;}interface AIAssistantProps {  worldId?: string;  context?: string;  quickPrompts?: QuickPrompt[];  title?: string;  placeholder?: string;  emptyStateText?: string;}
 
 interface Message {
   id: string;
@@ -17,14 +16,21 @@ interface Message {
   content: string;
 }
 
-const QUICK_PROMPTS = [
+const DEFAULT_QUICK_PROMPTS: QuickPrompt[] = [
   { label: 'Describe scene', prompt: 'Describe the current scene with sensory details.' },
   { label: 'NPC dialogue', prompt: 'Generate dialogue for an NPC the party is interacting with.' },
   { label: 'What happens next?', prompt: 'Suggest what could happen next in the story.' },
   { label: 'Encounter advice', prompt: 'Give tactical advice for running this encounter.' },
 ];
 
-export function AIAssistant({ worldId }: AIAssistantProps) {
+export function AIAssistant({
+  worldId,
+  context,
+  quickPrompts = DEFAULT_QUICK_PROMPTS,
+  title = 'AI DM Assistant',
+  placeholder = 'Ask the AI assistant...',
+  emptyStateText = 'Ask me anything about running your game!',
+}: AIAssistantProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -154,7 +160,7 @@ export function AIAssistant({ worldId }: AIAssistantProps) {
           <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-purple-600" />
-              <h3 className="font-semibold text-gray-900 dark:text-white">AI DM Assistant</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
             </div>
             <div className="flex items-center gap-1">
               {messages.length > 0 && (
@@ -174,10 +180,10 @@ export function AIAssistant({ worldId }: AIAssistantProps) {
               <div className="text-center py-8">
                 <Sparkles className="w-12 h-12 text-purple-400 mx-auto mb-4" />
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Ask me anything about running your game!
+                  {emptyStateText}
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center">
-                  {QUICK_PROMPTS.map((qp, i) => (
+                  {quickPrompts.map((qp, i) => (
                     <button
                       key={i}
                       onClick={() => handleQuickPrompt(qp.prompt)}
@@ -203,7 +209,13 @@ export function AIAssistant({ worldId }: AIAssistantProps) {
                       }
                     `}
                   >
-                    <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                    {msg.role === 'user' ? (
+                      <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                    ) : (
+                      <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:my-2 prose-strong:text-inherit prose-code:text-purple-600 dark:prose-code:text-purple-400 prose-code:bg-gray-200 dark:prose-code:bg-gray-600 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    )}
                     {msg.role === 'assistant' && msg.content && (
                       <button
                         onClick={() => copyMessage(msg.content, index)}
@@ -242,7 +254,7 @@ export function AIAssistant({ worldId }: AIAssistantProps) {
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask the AI assistant..."
+                placeholder={placeholder}
                 className="flex-1 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 disabled={isLoading}
               />

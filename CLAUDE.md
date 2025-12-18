@@ -95,6 +95,15 @@ NEXT_PUBLIC_PUSHER_CLUSTER
 - Clean fantasy aesthetic without clutter
 - Accessibility: ARIA labels, keyboard navigation
 
+## Remaining Tasks
+
+The following pages/features need to be completed:
+
+- [x] **Edit Character Page** (`/characters/[id]`) - View and edit character details, stats, inventory
+- [x] **Create Enemy Page** (`/dm/enemies/new`) - Form to create new enemy templates
+- [ ] **Session Page** (`/session/[id]`) - Real-time game session view for both players and DMs
+- [ ] **Global Settings Page** (`/settings`) - User preferences, theme toggle, account settings
+
 ## Reference Documentation
 
 See `PLANNING.md` for detailed architecture decisions and database schema.
