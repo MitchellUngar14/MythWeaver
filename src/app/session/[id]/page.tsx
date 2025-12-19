@@ -12,6 +12,7 @@ import { SessionDiceRoller } from '@/components/session/SessionDiceRoller';
 import { RollHistory } from '@/components/session/RollHistory';
 import { ParticipantsList } from '@/components/session/ParticipantsList';
 import { PlayerCharacterPanel } from '@/components/session/PlayerCharacterPanel';
+import { SessionDMAssistant } from '@/components/session/SessionDMAssistant';
 import type { Character } from '@/lib/schema';
 
 interface SessionData {
@@ -28,7 +29,7 @@ interface SessionData {
     id: string;
     userId: string;
     user: { id: string; name: string };
-    character: { id: string; name: string } | null;
+    character: Character | null;
     isOnline: boolean;
   }>;
   combatants: CombatantState[];
@@ -387,6 +388,24 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           </div>
         </div>
       </div>
+
+      {/* DM AI Assistant - Only visible to DM */}
+      {store.isDm && sessionData && (
+        <SessionDMAssistant
+          worldId={store.worldId || ''}
+          worldName={store.worldName}
+          sessionId={id}
+          sessionName={store.sessionName}
+          participants={sessionData.participants.map(p => ({
+            id: p.id,
+            userName: p.user.name,
+            character: p.character,
+          }))}
+          combatants={store.combatants}
+          combatActive={store.combatActive}
+          round={store.round}
+        />
+      )}
     </div>
   );
 }
