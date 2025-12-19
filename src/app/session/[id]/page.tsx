@@ -233,7 +233,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     }
   }
 
-  function handleAdvanceTurn() {
+  async function handleAdvanceTurn() {
     const sortedCombatants = [...store.combatants].sort((a, b) => b.position - a.position);
     if (sortedCombatants.length === 0) return;
     const currentIndex = sortedCombatants.findIndex(c => c.id === store.currentTurn);
@@ -241,7 +241,14 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     const newRound = nextIndex === 0 ? store.round + 1 : store.round;
     const nextId = sortedCombatants[nextIndex]?.id;
     if (nextId) {
+      // Update local state immediately for responsive UI
       store.advanceTurn(nextId, newRound);
+      // Broadcast to other participants via API
+      await fetch(`/api/sessions/${id}/combat/turn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentTurn: nextId, round: newRound }),
+      });
     }
   }
 
