@@ -109,7 +109,7 @@ export default function JoinWorldPage() {
             )}
 
             <Link href="/dashboard">
-              <Button variant={success.activeSession ? "outline" : "default"} className="w-full">
+              <Button variant={success.activeSession ? "outline" : "primary"} className="w-full">
                 Go to Dashboard
               </Button>
             </Link>
