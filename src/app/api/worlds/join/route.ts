@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { worlds, worldMembers, characters } from '@/lib/schema';
+import { worlds, worldMembers, characters, gameSessions } from '@/lib/schema';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -111,6 +111,14 @@ export async function POST(req: NextRequest) {
         .where(eq(characters.id, characterId));
     }
 
+    // Check for active session in this world
+    const activeSession = await db.query.gameSessions.findFirst({
+      where: and(
+        eq(gameSessions.worldId, world.id),
+        eq(gameSessions.isActive, true)
+      ),
+    });
+
     return NextResponse.json({
       membership,
       world: {
@@ -118,6 +126,10 @@ export async function POST(req: NextRequest) {
         name: world.name,
         description: world.description,
       },
+      activeSession: activeSession ? {
+        id: activeSession.id,
+        name: activeSession.name,
+      } : undefined,
     }, { status: 201 });
   } catch (error) {
     console.error('Error joining world:', error);

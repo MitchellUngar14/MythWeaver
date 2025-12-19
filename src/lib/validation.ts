@@ -113,9 +113,55 @@ export const createSessionSchema = z.object({
   worldId: z.string().uuid(),
 });
 
+export const updateSessionSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  notes: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const statusEffectSchema = z.object({
+  name: z.string().min(1),
+  duration: z.number().optional(),
+  description: z.string().optional(),
+});
+
+export const addCombatantSchema = z.object({
+  type: z.enum(['character', 'enemy']),
+  characterId: z.string().uuid().optional(),
+  templateId: z.string().uuid().optional(),
+  initiative: z.number().min(1).max(30),
+  customName: z.string().max(100).optional(),
+}).refine(
+  (data) => (data.type === 'character' && data.characterId) || (data.type === 'enemy' && data.templateId),
+  { message: 'Character ID or Template ID required based on type' }
+);
+
+export const updateCombatantSchema = z.object({
+  currentHp: z.number().min(0).optional(),
+  statusEffects: z.array(statusEffectSchema).optional(),
+  isActive: z.boolean().optional(),
+  position: z.number().optional(),
+  showHpToPlayers: z.boolean().optional(),
+});
+
+export const sessionRollSchema = z.object({
+  dice: z.string().regex(/^\d+d\d+([+-]\d+)?$/, 'Invalid dice format'),
+  context: z.string().max(100).optional(),
+});
+
+export const chatMessageSchema = z.object({
+  content: z.string().min(1, 'Message cannot be empty').max(1000),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type CreateCharacterInput = z.infer<typeof createCharacterSchema>;
 export type CreateWorldInput = z.infer<typeof createWorldSchema>;
 export type CreateEnemyTemplateInput = z.infer<typeof createEnemyTemplateSchema>;
 export type DiceRollInput = z.infer<typeof diceRollSchema>;
+export type CreateSessionInput = z.infer<typeof createSessionSchema>;
+export type UpdateSessionInput = z.infer<typeof updateSessionSchema>;
+export type AddCombatantInput = z.infer<typeof addCombatantSchema>;
+export type UpdateCombatantInput = z.infer<typeof updateCombatantSchema>;
+export type SessionRollInput = z.infer<typeof sessionRollSchema>;
+export type ChatMessageInput = z.infer<typeof chatMessageSchema>;

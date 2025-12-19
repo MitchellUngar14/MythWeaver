@@ -44,6 +44,7 @@ export default function WorldDetailPage({ params }: { params: Promise<{ id: stri
   const [isSaving, setIsSaving] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isStartingSession, setIsStartingSession] = useState(false);
 
   useEffect(() => {
     fetchWorld();
@@ -101,6 +102,29 @@ export default function WorldDetailPage({ params }: { params: Promise<{ id: stri
       await navigator.clipboard.writeText(world.roomKey);
       setCopiedKey(true);
       setTimeout(() => setCopiedKey(false), 2000);
+    }
+  }
+
+  async function handleStartSession() {
+    if (!world) return;
+    setIsStartingSession(true);
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `Session ${new Date().toLocaleDateString()}`,
+          worldId: world.id,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        router.push(`/session/${data.session.id}`);
+      }
+    } catch (error) {
+      console.error('Error starting session:', error);
+    } finally {
+      setIsStartingSession(false);
     }
   }
 
@@ -288,12 +312,15 @@ export default function WorldDetailPage({ params }: { params: Promise<{ id: stri
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Link href={`/dm/session/${world.roomKey}`} className="block">
-                  <Button variant="outline" className="w-full justify-start">
-                    <Globe className="w-4 h-4 mr-2" />
-                    Start Session
-                  </Button>
-                </Link>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={handleStartSession}
+                  isLoading={isStartingSession}
+                >
+                  <Globe className="w-4 h-4 mr-2" />
+                  Start Session
+                </Button>
                 <Link href="/dm/enemies" className="block">
                   <Button variant="outline" className="w-full justify-start">
                     <Shield className="w-4 h-4 mr-2" />

@@ -117,12 +117,14 @@ export const combatInstances = pgTable('combat_instances', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionId: uuid('session_id').references(() => gameSessions.id, { onDelete: 'cascade' }).notNull(),
   templateId: uuid('template_id').references(() => enemyTemplates.id),
+  characterId: uuid('character_id').references(() => characters.id, { onDelete: 'set null' }),
   name: varchar('name', { length: 100 }).notNull(),
   currentHp: integer('current_hp'),
   maxHp: integer('max_hp'),
   statusEffects: jsonb('status_effects').default([]).$type<StatusEffect[]>(),
   position: integer('position'), // initiative order
   isActive: boolean('is_active').default(true),
+  showHpToPlayers: boolean('show_hp_to_players').default(false),
 }, (table) => [
   index('idx_combat_session').on(table.sessionId),
 ]);
@@ -163,6 +165,31 @@ export const characterHistory = pgTable('character_history', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Session participants (tracks who's connected to a session)
+export const sessionParticipants = pgTable('session_participants', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id').references(() => gameSessions.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  characterId: uuid('character_id').references(() => characters.id, { onDelete: 'set null' }),
+  joinedAt: timestamp('joined_at').defaultNow(),
+  leftAt: timestamp('left_at'),
+  isOnline: boolean('is_online').default(true),
+}, (table) => [
+  unique('session_participant_unique').on(table.sessionId, table.userId),
+  index('idx_session_participants_session').on(table.sessionId),
+]);
+
+// Chat messages for session
+export const chatMessages = pgTable('chat_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id').references(() => gameSessions.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+  index('idx_chat_messages_session').on(table.sessionId),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   characters: many(characters),
@@ -196,6 +223,49 @@ export const gameSessionsRelations = relations(gameSessions, ({ one, many }) => 
   combatInstances: many(combatInstances),
   diceRolls: many(diceRolls),
   actionLogs: many(actionLog),
+  participants: many(sessionParticipants),
+  chatMessages: many(chatMessages),
+}));
+
+export const sessionParticipantsRelations = relations(sessionParticipants, ({ one }) => ({
+  session: one(gameSessions, { fields: [sessionParticipants.sessionId], references: [gameSessions.id] }),
+  user: one(users, { fields: [sessionParticipants.userId], references: [users.id] }),
+  character: one(characters, { fields: [sessionParticipants.characterId], references: [characters.id] }),
+}));
+
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+  session: one(gameSessions, { fields: [chatMessages.sessionId], references: [gameSessions.id] }),
+  user: one(users, { fields: [chatMessages.userId], references: [users.id] }),
+}));
+
+export const combatInstancesRelations = relations(combatInstances, ({ one }) => ({
+  session: one(gameSessions, { fields: [combatInstances.sessionId], references: [gameSessions.id] }),
+  template: one(enemyTemplates, { fields: [combatInstances.templateId], references: [enemyTemplates.id] }),
+  character: one(characters, { fields: [combatInstances.characterId], references: [characters.id] }),
+}));
+
+export const diceRollsRelations = relations(diceRolls, ({ one }) => ({
+  session: one(gameSessions, { fields: [diceRolls.sessionId], references: [gameSessions.id] }),
+  user: one(users, { fields: [diceRolls.userId], references: [users.id] }),
+}));
+
+export const actionLogRelations = relations(actionLog, ({ one }) => ({
+  session: one(gameSessions, { fields: [actionLog.sessionId], references: [gameSessions.id] }),
+  actor: one(users, { fields: [actionLog.actorId], references: [users.id] }),
+}));
+
+export const enemyTemplatesRelations = relations(enemyTemplates, ({ one, many }) => ({
+  dm: one(users, { fields: [enemyTemplates.dmId], references: [users.id] }),
+  world: one(worlds, { fields: [enemyTemplates.worldId], references: [worlds.id] }),
+  combatInstances: many(combatInstances),
+}));
+
+export const worldResourcesRelations = relations(worldResources, ({ one }) => ({
+  world: one(worlds, { fields: [worldResources.worldId], references: [worlds.id] }),
+}));
+
+export const characterHistoryRelations = relations(characterHistory, ({ one }) => ({
+  character: one(characters, { fields: [characterHistory.characterId], references: [characters.id] }),
 }));
 
 // TypeScript types for JSONB columns
@@ -267,3 +337,7 @@ export type NewCharacter = typeof characters.$inferInsert;
 export type GameSession = typeof gameSessions.$inferSelect;
 export type EnemyTemplate = typeof enemyTemplates.$inferSelect;
 export type WorldResource = typeof worldResources.$inferSelect;
+export type SessionParticipant = typeof sessionParticipants.$inferSelect;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type CombatInstance = typeof combatInstances.$inferSelect;
+export type DiceRoll = typeof diceRolls.$inferSelect;

@@ -1,11 +1,14 @@
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { db } from '@/lib/db';
+import { worldMembers, gameSessions, worlds } from '@/lib/schema';
+import { eq, and } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 import {
   Users, Crown, Globe, Dice6, Sword, Plus,
-  ArrowRight, LogOut, Settings
+  ArrowRight, LogOut, Settings, Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -19,6 +22,32 @@ export default async function DashboardPage() {
   }
 
   const { user } = session;
+
+  // Fetch active sessions in worlds the player has joined
+  const activeSessions: { id: string; name: string; worldName: string }[] = [];
+  if (user.isPlayer) {
+    const memberships = await db.query.worldMembers.findMany({
+      where: eq(worldMembers.userId, user.id),
+      with: {
+        world: {
+          with: {
+            sessions: true,
+          },
+        },
+      },
+    });
+
+    for (const membership of memberships) {
+      const activeSession = membership.world.sessions.find(s => s.isActive);
+      if (activeSession) {
+        activeSessions.push({
+          id: activeSession.id,
+          name: activeSession.name,
+          worldName: membership.world.name,
+        });
+      }
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -75,6 +104,30 @@ export default async function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Active Sessions */}
+                {activeSessions.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-green-600 dark:text-green-400 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      Active Sessions
+                    </p>
+                    {activeSessions.map((s) => (
+                      <Link key={s.id} href={`/session/${s.id}`} className="block">
+                        <div className="flex items-center justify-between p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <Play className="w-5 h-5 text-green-600 dark:text-green-400" />
+                            <div>
+                              <span className="font-medium text-green-700 dark:text-green-300">{s.name}</span>
+                              <p className="text-xs text-green-600 dark:text-green-400">{s.worldName}</p>
+                            </div>
+                          </div>
+                          <ArrowRight className="w-5 h-5 text-green-500" />
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
                 <Link href="/characters" className="block">
                   <div className="flex items-center justify-between p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                     <div className="flex items-center gap-3">
@@ -92,13 +145,21 @@ export default async function DashboardPage() {
                     </div>
                   </div>
                 </Link>
-                <Link href="/join" className="block">
+                <Link href="/worlds" className="block">
                   <div className="flex items-center justify-between p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                     <div className="flex items-center gap-3">
                       <Globe className="w-5 h-5 text-gray-500" />
-                      <span className="font-medium">Join a World</span>
+                      <span className="font-medium">My Worlds</span>
                     </div>
                     <ArrowRight className="w-5 h-5 text-gray-400" />
+                  </div>
+                </Link>
+                <Link href="/join" className="block">
+                  <div className="flex items-center justify-between p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <Plus className="w-5 h-5 text-gray-400" />
+                      <span className="text-gray-600 dark:text-gray-400">Join a World</span>
+                    </div>
                   </div>
                 </Link>
                 <Link href="/dice" className="block">

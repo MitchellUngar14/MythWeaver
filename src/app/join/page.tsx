@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Globe, Users, Check } from 'lucide-react';
+import { ArrowLeft, Globe, Users, Check, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -17,6 +17,11 @@ interface Character {
   worldId: string | null;
 }
 
+interface ActiveSession {
+  id: string;
+  name: string;
+}
+
 export default function JoinWorldPage() {
   const router = useRouter();
   const [roomKey, setRoomKey] = useState('');
@@ -25,7 +30,7 @@ export default function JoinWorldPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCharacters, setIsLoadingCharacters] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState<{ worldName: string } | null>(null);
+  const [success, setSuccess] = useState<{ worldName: string; activeSession?: ActiveSession } | null>(null);
 
   useEffect(() => {
     fetchCharacters();
@@ -68,7 +73,10 @@ export default function JoinWorldPage() {
         return;
       }
 
-      setSuccess({ worldName: data.world.name });
+      setSuccess({
+        worldName: data.world.name,
+        activeSession: data.activeSession,
+      });
     } catch {
       setError('An error occurred. Please try again.');
     } finally {
@@ -78,7 +86,7 @@ export default function JoinWorldPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
         <Card className="w-full max-w-md text-center">
           <CardContent className="pt-6">
             <div className="w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -90,8 +98,20 @@ export default function JoinWorldPage() {
             <p className="text-gray-600 dark:text-gray-400 mb-6">
               You&apos;ve successfully joined the world.
             </p>
+
+            {success.activeSession && (
+              <Link href={`/session/${success.activeSession.id}`} className="block mb-4">
+                <Button className="w-full bg-green-600 hover:bg-green-700">
+                  <Play className="w-4 h-4 mr-2" />
+                  Join Active Session: {success.activeSession.name}
+                </Button>
+              </Link>
+            )}
+
             <Link href="/dashboard">
-              <Button className="w-full">Go to Dashboard</Button>
+              <Button variant={success.activeSession ? "outline" : "default"} className="w-full">
+                Go to Dashboard
+              </Button>
             </Link>
           </CardContent>
         </Card>
