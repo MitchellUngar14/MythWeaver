@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { StatusEffect } from '@/lib/schema';
+import type { ActionEconomy, TakenAction } from '@/lib/combat-actions';
+import { DEFAULT_ACTION_ECONOMY, consumeAction } from '@/lib/combat-actions';
 
 export interface Participant {
   id: string;
@@ -24,6 +26,7 @@ export interface CombatantState {
   templateId?: string;
   showHpToPlayers?: boolean; // DM toggle to reveal HP numbers to players
   isCompanion?: boolean; // NPC/enemy fighting with the party
+  actionEconomy?: ActionEconomy; // Tracks action/bonus/reaction/movement used this turn
 }
 
 export interface SessionRoll {
@@ -87,6 +90,8 @@ interface SessionState {
   updateCombatant: (odcombatantId: string, changes: Partial<CombatantState>) => void;
   setInitiativeOrder: (order: { id: string; position: number }[]) => void;
   advanceTurn: (currentTurn: string, round: number) => void;
+  useCombatAction: (combatantId: string, action: TakenAction) => void;
+  resetActionEconomy: (combatantId: string) => void;
 
   // Chat/Roll actions
   addChatMessage: (message: ChatMessage) => void;
@@ -136,12 +141,22 @@ export const useSessionStore = create<SessionState>((set) => ({
     ),
   })),
 
-  startCombat: (combatants) => set({
-    combatActive: true,
-    combatants: combatants.sort((a, b) => b.position - a.position),
-    currentTurn: combatants.sort((a, b) => b.position - a.position)[0]?.id || null,
-    round: 1,
-  }),
+  startCombat: (combatants) => {
+    const sorted = combatants.sort((a, b) => b.position - a.position);
+    const firstCombatantId = sorted[0]?.id || null;
+    return set({
+      combatActive: true,
+      combatants: sorted.map(c => ({
+        ...c,
+        // Initialize action economy, reset for first combatant
+        actionEconomy: c.id === firstCombatantId
+          ? { ...DEFAULT_ACTION_ECONOMY }
+          : c.actionEconomy,
+      })),
+      currentTurn: firstCombatantId,
+      round: 1,
+    });
+  },
 
   endCombat: () => set({
     combatActive: false,
@@ -178,7 +193,39 @@ export const useSessionStore = create<SessionState>((set) => ({
     }).sort((a, b) => b.position - a.position),
   })),
 
-  advanceTurn: (currentTurn, round) => set({ currentTurn, round }),
+  advanceTurn: (currentTurn, round) => set((state) => ({
+    currentTurn,
+    round,
+    // Reset action economy for the new current turn combatant
+    combatants: state.combatants.map(c =>
+      c.id === currentTurn
+        ? { ...c, actionEconomy: { ...DEFAULT_ACTION_ECONOMY } }
+        : c
+    ),
+  })),
+
+  useCombatAction: (combatantId, action) => set((state) => ({
+    combatants: state.combatants.map(c => {
+      if (c.id !== combatantId) return c;
+      const currentEconomy = c.actionEconomy || { ...DEFAULT_ACTION_ECONOMY };
+      const updatedEconomy = consumeAction(action.category, currentEconomy);
+      return {
+        ...c,
+        actionEconomy: {
+          ...updatedEconomy,
+          actionsTaken: [...currentEconomy.actionsTaken, action],
+        },
+      };
+    }),
+  })),
+
+  resetActionEconomy: (combatantId) => set((state) => ({
+    combatants: state.combatants.map(c =>
+      c.id === combatantId
+        ? { ...c, actionEconomy: { ...DEFAULT_ACTION_ECONOMY } }
+        : c
+    ),
+  })),
 
   addChatMessage: (message) => set((state) => {
     // Deduplicate by ID to prevent double-adding from optimistic + Pusher updates

@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Heart, Shield, Trash2, Skull, Eye, EyeOff, Users, Swords } from 'lucide-react';
+import { Heart, Shield, Trash2, Skull, Eye, EyeOff, Users, Swords, Zap, Circle, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { CombatantState } from '@/stores/sessionStore';
+import { CombatActionModal } from './CombatActionModal';
+import { DEFAULT_ACTION_ECONOMY, type ActionCategory } from '@/lib/combat-actions';
 
 interface CombatantCardProps {
   combatant: CombatantState;
@@ -14,6 +16,13 @@ interface CombatantCardProps {
   onUpdate: (changes: Partial<CombatantState>) => void;
   onRemove: () => void;
   hideEnemyHp?: boolean; // Hide exact HP values for enemies (players only see health bar)
+  sessionId?: string; // Required for taking actions
+  onTakeAction?: (combatantId: string, action: {
+    actionId: string;
+    actionName: string;
+    category: ActionCategory;
+    details?: string;
+  }) => Promise<void>;
 }
 
 export function CombatantCard({
@@ -24,12 +33,16 @@ export function CombatantCard({
   onUpdate,
   onRemove,
   hideEnemyHp = false,
+  sessionId,
+  onTakeAction,
 }: CombatantCardProps) {
   const [showHpInput, setShowHpInput] = useState(false);
   const [hpInputValue, setHpInputValue] = useState(combatant.currentHp.toString());
+  const [showActionModal, setShowActionModal] = useState(false);
   const canEdit = isDm || isOwner;
   const isDead = combatant.currentHp <= 0;
   const hpPercentage = Math.max(0, Math.min(100, (combatant.currentHp / combatant.maxHp) * 100));
+  const economy = combatant.actionEconomy || { ...DEFAULT_ACTION_ECONOMY };
 
   // Hide HP numbers for enemies when player is viewing (not DM, not owner)
   // Unless DM has toggled showHpToPlayers for this combatant
@@ -182,6 +195,69 @@ export function CombatantCard({
         </div>
       </div>
 
+      {/* Action Economy Indicator - Only show for current turn */}
+      {isCurrentTurn && !isDead && (
+        <div className="flex items-center justify-between gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+          <div className="flex items-center gap-1 flex-wrap">
+            <span
+              className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded ${
+                economy.usedAction
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                  : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
+              }`}
+              title="Action"
+            >
+              {economy.usedAction ? <Check className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+              A
+            </span>
+            <span
+              className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded ${
+                economy.usedBonusAction
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                  : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+              }`}
+              title="Bonus Action"
+            >
+              {economy.usedBonusAction ? <Check className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+              B
+            </span>
+            <span
+              className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded ${
+                economy.usedReaction
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                  : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+              }`}
+              title="Reaction"
+            >
+              {economy.usedReaction ? <Check className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+              R
+            </span>
+            <span
+              className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded ${
+                economy.usedMovement
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                  : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+              }`}
+              title="Movement"
+            >
+              {economy.usedMovement ? <Check className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+              M
+            </span>
+          </div>
+          {canEdit && sessionId && onTakeAction && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowActionModal(true)}
+              className="h-7 px-2 text-xs"
+            >
+              <Zap className="w-3 h-3 mr-1" />
+              Actions
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Status Effects */}
       {combatant.statusEffects && combatant.statusEffects.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
@@ -240,6 +316,18 @@ export function CombatantCard({
             </Button>
           </span>
         </div>
+      )}
+
+      {/* Action Modal */}
+      {showActionModal && sessionId && onTakeAction && (
+        <CombatActionModal
+          combatant={combatant}
+          sessionId={sessionId}
+          onClose={() => setShowActionModal(false)}
+          onActionTaken={async (action) => {
+            await onTakeAction(combatant.id, action);
+          }}
+        />
       )}
     </div>
   );

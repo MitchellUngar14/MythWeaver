@@ -1,8 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Users, Swords, Shield, Heart, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { MapPin, Users, Swords, Shield, Heart, ChevronDown, ChevronUp, Plus, Package, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getItemTypeIcon, getItemTypeColor, getDamageTypeIcon, getDamageTypeColor } from '@/lib/item-icons';
+import { ItemDetailModal } from './ItemDetailModal';
+import type { Item, ItemProperties } from '@/lib/schema';
+
+interface InventoryItem {
+  id: string;
+  quantity: number;
+  equipped: boolean;
+  item: Item;
+}
+
+interface SelectedItemState {
+  item: Item;
+  quantity: number;
+  equipped: boolean;
+}
 
 interface Creature {
   id: string;
@@ -39,6 +55,7 @@ export function LocationCreaturesCard({
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<SelectedItemState | null>(null);
 
   useEffect(() => {
     async function fetchCreatures() {
@@ -125,6 +142,7 @@ export function LocationCreaturesCard({
                     isExpanded={expandedId === creature.id}
                     onToggle={() => setExpandedId(expandedId === creature.id ? null : creature.id)}
                     onAddToCombat={onAddToCombat}
+                    onItemClick={(item, quantity, equipped) => setSelectedItem({ item, quantity, equipped })}
                   />
                 ))}
               </div>
@@ -146,12 +164,23 @@ export function LocationCreaturesCard({
                     isExpanded={expandedId === creature.id}
                     onToggle={() => setExpandedId(expandedId === creature.id ? null : creature.id)}
                     onAddToCombat={onAddToCombat}
+                    onItemClick={(item, quantity, equipped) => setSelectedItem({ item, quantity, equipped })}
                   />
                 ))}
               </div>
             </div>
           )}
         </div>
+      )}
+
+      {/* Item Detail Modal */}
+      {selectedItem && (
+        <ItemDetailModal
+          item={selectedItem.item}
+          quantity={selectedItem.quantity}
+          equipped={selectedItem.equipped}
+          onClose={() => setSelectedItem(null)}
+        />
       )}
     </div>
   );
@@ -162,12 +191,41 @@ function CreatureItem({
   isExpanded,
   onToggle,
   onAddToCombat,
+  onItemClick,
 }: {
   creature: Creature;
   isExpanded: boolean;
   onToggle: () => void;
   onAddToCombat?: (creature: Creature, count: number) => void;
+  onItemClick?: (item: Item, quantity: number, equipped: boolean) => void;
 }) {
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+
+  // Fetch inventory when expanded
+  useEffect(() => {
+    async function fetchInventory() {
+      if (!isExpanded || inventoryLoaded) return;
+
+      setIsLoadingInventory(true);
+      try {
+        const res = await fetch(`/api/enemies/${creature.id}/items`);
+        const data = await res.json();
+        if (res.ok && data.items) {
+          setInventory(data.items);
+        }
+      } catch (error) {
+        console.error('Error fetching creature inventory:', error);
+      } finally {
+        setIsLoadingInventory(false);
+        setInventoryLoaded(true);
+      }
+    }
+
+    fetchInventory();
+  }, [isExpanded, creature.id, inventoryLoaded]);
+
   return (
     <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg overflow-hidden">
       <button
@@ -222,6 +280,71 @@ function CreatureItem({
 
           <div className="text-xs text-gray-500 dark:text-gray-400">
             Speed: {creature.stats.speed} ft.
+          </div>
+
+          {/* Inventory Section */}
+          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+              <Package className="w-3.5 h-3.5" />
+              <span>Inventory</span>
+            </div>
+            {isLoadingInventory ? (
+              <div className="flex justify-center py-2">
+                <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+              </div>
+            ) : inventory.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No items</p>
+            ) : (
+              <div className="space-y-1">
+                {inventory.map((invItem) => {
+                  const item = invItem.item;
+                  const props = (item.properties || {}) as ItemProperties;
+                  const TypeIcon = getItemTypeIcon(item.type, props.isRanged);
+
+                  return (
+                    <button
+                      key={invItem.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onItemClick?.(item, invItem.quantity, invItem.equipped);
+                      }}
+                      className={`w-full flex items-center gap-2 p-1.5 rounded text-xs transition-colors cursor-pointer ${
+                        invItem.equipped
+                          ? 'bg-indigo-100 dark:bg-indigo-900/30 hover:bg-indigo-200 dark:hover:bg-indigo-900/50'
+                          : 'bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500'
+                      }`}
+                    >
+                      <TypeIcon className={`w-3 h-3 ${getItemTypeColor(item.type)}`} />
+                      <span className="flex-1 text-left text-gray-900 dark:text-white">
+                        {item.name}
+                        {invItem.quantity > 1 && (
+                          <span className="ml-1 text-gray-500">x{invItem.quantity}</span>
+                        )}
+                      </span>
+                      {invItem.equipped && (
+                        <span className="text-[10px] px-1 py-0.5 bg-indigo-200 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-300 rounded">
+                          Equipped
+                        </span>
+                      )}
+                      {item.type === 'weapon' && props.damage && (
+                        <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                          {props.damageType && (() => {
+                            const DmgIcon = getDamageTypeIcon(props.damageType);
+                            return <DmgIcon className={`w-3 h-3 ${getDamageTypeColor(props.damageType)}`} />;
+                          })()}
+                          {props.damage}
+                        </span>
+                      )}
+                      {(item.type === 'armor' || item.type === 'shield') && props.acBonus && (
+                        <span className="text-gray-500 dark:text-gray-400">
+                          +{props.acBonus} AC
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {onAddToCombat && (

@@ -1,9 +1,27 @@
 'use client';
 
-import { Heart, Shield, Zap, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Heart, Shield, Zap, User, Package, Loader2 } from 'lucide-react';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Button } from '@/components/ui/button';
-import type { Character } from '@/lib/schema';
+import { getItemTypeIcon, getItemTypeColor, getDamageTypeIcon, getDamageTypeColor } from '@/lib/item-icons';
+import { ItemDetailModal } from './ItemDetailModal';
+import type { Character, Item, ItemProperties } from '@/lib/schema';
+
+interface InventoryItem {
+  id: string;
+  quantity: number;
+  equipped: boolean;
+  attuned: boolean;
+  item: Item;
+}
+
+interface SelectedItemState {
+  item: Item;
+  quantity: number;
+  equipped: boolean;
+  attuned: boolean;
+}
 
 interface PlayerCharacterPanelProps {
   character: Character;
@@ -13,6 +31,27 @@ interface PlayerCharacterPanelProps {
 export function PlayerCharacterPanel({ character, onUpdateHp }: PlayerCharacterPanelProps) {
   const { stats } = character;
   const hpPercentage = Math.max(0, Math.min(100, (stats.hp / stats.maxHp) * 100));
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [isLoadingInventory, setIsLoadingInventory] = useState(true);
+  const [selectedItem, setSelectedItem] = useState<SelectedItemState | null>(null);
+
+  // Fetch inventory on mount
+  useEffect(() => {
+    async function fetchInventory() {
+      try {
+        const res = await fetch(`/api/characters/${character.id}/items`);
+        if (res.ok) {
+          const data = await res.json();
+          setInventory(data.items || []);
+        }
+      } catch (error) {
+        console.error('Error fetching inventory:', error);
+      } finally {
+        setIsLoadingInventory(false);
+      }
+    }
+    fetchInventory();
+  }, [character.id]);
 
   function getHpColor() {
     if (hpPercentage <= 25) return 'bg-red-500';
@@ -113,6 +152,128 @@ export function PlayerCharacterPanel({ character, onUpdateHp }: PlayerCharacterP
           ))}
         </div>
       </div>
+
+      {/* Inventory */}
+      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-2 mb-3">
+          <Package className="w-4 h-4 text-indigo-500" />
+          <p className="text-sm font-medium text-gray-900 dark:text-white">Inventory</p>
+          {!isLoadingInventory && (
+            <span className="text-xs text-gray-500">({inventory.length})</span>
+          )}
+        </div>
+
+        {isLoadingInventory ? (
+          <div className="flex justify-center py-3">
+            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+          </div>
+        ) : inventory.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-2">No items</p>
+        ) : (
+          <div className="space-y-1.5">
+            {/* Equipped items first */}
+            {inventory.filter(i => i.equipped).length > 0 && (
+              <div className="mb-2">
+                <div className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 mb-1">
+                  EQUIPPED
+                </div>
+                {inventory.filter(i => i.equipped).map((invItem) => (
+                  <PlayerInventoryItem
+                    key={invItem.id}
+                    invItem={invItem}
+                    onClick={() => setSelectedItem({
+                      item: invItem.item,
+                      quantity: invItem.quantity,
+                      equipped: invItem.equipped,
+                      attuned: invItem.attuned,
+                    })}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Non-equipped items */}
+            {inventory.filter(i => !i.equipped).length > 0 && (
+              <div>
+                {inventory.filter(i => i.equipped).length > 0 && (
+                  <div className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    BACKPACK
+                  </div>
+                )}
+                {inventory.filter(i => !i.equipped).map((invItem) => (
+                  <PlayerInventoryItem
+                    key={invItem.id}
+                    invItem={invItem}
+                    onClick={() => setSelectedItem({
+                      item: invItem.item,
+                      quantity: invItem.quantity,
+                      equipped: invItem.equipped,
+                      attuned: invItem.attuned,
+                    })}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Item Detail Modal */}
+      {selectedItem && (
+        <ItemDetailModal
+          item={selectedItem.item}
+          quantity={selectedItem.quantity}
+          equipped={selectedItem.equipped}
+          attuned={selectedItem.attuned}
+          onClose={() => setSelectedItem(null)}
+        />
+      )}
     </CollapsibleCard>
+  );
+}
+
+function PlayerInventoryItem({ invItem, onClick }: { invItem: InventoryItem; onClick: () => void }) {
+  const item = invItem.item;
+  const props = (item.properties || {}) as ItemProperties;
+  const TypeIcon = getItemTypeIcon(item.type, props.isRanged);
+
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 p-2 rounded-lg text-sm transition-colors cursor-pointer mb-1 ${
+        invItem.equipped
+          ? 'bg-indigo-100 dark:bg-indigo-900/30 hover:bg-indigo-200 dark:hover:bg-indigo-900/50'
+          : 'bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700'
+      }`}
+    >
+      <TypeIcon className={`w-4 h-4 flex-shrink-0 ${getItemTypeColor(item.type)}`} />
+      <div className="flex-1 text-left min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium text-gray-900 dark:text-white truncate">
+            {item.name}
+          </span>
+          {invItem.quantity > 1 && (
+            <span className="text-xs text-gray-500">x{invItem.quantity}</span>
+          )}
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+          {item.type === 'weapon' && props.damage && (
+            <span className="flex items-center gap-1">
+              {props.damageType && (() => {
+                const DmgIcon = getDamageTypeIcon(props.damageType);
+                return <DmgIcon className={`w-3 h-3 ${getDamageTypeColor(props.damageType)}`} />;
+              })()}
+              {props.damage}
+            </span>
+          )}
+          {(item.type === 'armor' || item.type === 'shield') && props.acBonus && (
+            <span>+{props.acBonus} AC</span>
+          )}
+          {invItem.attuned && (
+            <span className="text-purple-600 dark:text-purple-400">Attuned</span>
+          )}
+        </div>
+      </div>
+    </button>
   );
 }

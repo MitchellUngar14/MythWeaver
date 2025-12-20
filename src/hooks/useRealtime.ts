@@ -4,6 +4,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { getPusherClient, SessionEvents } from '@/lib/pusher-client';
 import { useSessionStore, type CombatantState, type ChatMessage, type SessionRoll, type Participant } from '@/stores/sessionStore';
 import type { Channel } from 'pusher-js';
+import type { ActionCategory, ActionEconomy } from '@/lib/combat-actions';
 
 export function useRealtime(sessionId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
@@ -84,6 +85,23 @@ export function useRealtime(sessionId: string | null) {
 
     channel.bind(SessionEvents.TURN_ADVANCED, (data: { currentTurn: string; round: number }) => {
       store.advanceTurn(data.currentTurn, data.round);
+    });
+
+    // Combat action events
+    channel.bind(SessionEvents.ACTION_TAKEN, (data: {
+      combatantId: string;
+      combatantName: string;
+      actionId: string;
+      actionName: string;
+      category: ActionCategory;
+      details?: string;
+      actionEconomy: ActionEconomy;
+      timestamp: string;
+    }) => {
+      // Update the combatant's action economy
+      store.updateCombatant(data.combatantId, {
+        actionEconomy: data.actionEconomy,
+      });
     });
 
     // Chat & Roll events

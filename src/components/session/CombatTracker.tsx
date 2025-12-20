@@ -7,6 +7,7 @@ import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { CombatantCard } from './CombatantCard';
 import { AddCombatantModal } from './AddCombatantModal';
 import type { CombatantState } from '@/stores/sessionStore';
+import type { ActionCategory } from '@/lib/combat-actions';
 
 interface CombatTrackerProps {
   combatants: CombatantState[];
@@ -24,6 +25,12 @@ interface CombatTrackerProps {
   onAdvanceTurn: () => void;
   onEndCombat: () => Promise<void>;
   onAddCombatants: (combatants: Array<{ type: 'character' | 'enemy'; characterId?: string; templateId?: string; initiative: number; customName?: string }>) => Promise<void>;
+  onTakeAction?: (combatantId: string, action: {
+    actionId: string;
+    actionName: string;
+    category: ActionCategory;
+    details?: string;
+  }) => Promise<void>;
 }
 
 export function CombatTracker({
@@ -32,6 +39,7 @@ export function CombatTracker({
   round,
   combatActive,
   isDm,
+  sessionId,
   worldId,
   currentLocation,
   currentLocationResourceId,
@@ -40,6 +48,7 @@ export function CombatTracker({
   onAdvanceTurn,
   onEndCombat,
   onAddCombatants,
+  onTakeAction,
 }: CombatTrackerProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
@@ -129,6 +138,8 @@ export function CombatTracker({
                   onUpdate={(changes) => onUpdateCombatant(combatant.id, changes)}
                   onRemove={() => onRemoveCombatant(combatant.id)}
                   hideEnemyHp={!isDm}
+                  sessionId={sessionId}
+                  onTakeAction={onTakeAction}
                 />
               ))}
             </div>

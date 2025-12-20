@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 const transferSchema = z.object({
   sourceType: z.enum(['world', 'character', 'enemy', 'combatant']),
-  sourceId: z.string().optional(), // Not needed for 'world' type
+  sourceId: z.string().nullable().optional(), // Not needed for 'world' type
   targetCharacterId: z.string().uuid(),
   itemId: z.string().uuid(),
   quantity: z.number().min(1).default(1),

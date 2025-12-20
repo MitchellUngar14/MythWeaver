@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { gameSessions } from '@/lib/schema';
+import { gameSessions, combatInstances } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { broadcastToSession, SessionEvents } from '@/lib/pusher-server';
+import { DEFAULT_ACTION_ECONOMY } from '@/lib/combat-actions';
 
 // POST /api/sessions/[id]/combat/turn - Advance turn (DM only)
 export async function POST(
@@ -42,6 +43,11 @@ export async function POST(
     await db.update(gameSessions)
       .set({ currentTurnId: currentTurn, combatRound: round })
       .where(eq(gameSessions.id, id));
+
+    // Reset action economy for the new current combatant
+    await db.update(combatInstances)
+      .set({ actionEconomy: { ...DEFAULT_ACTION_ECONOMY } })
+      .where(eq(combatInstances.id, currentTurn));
 
     // Broadcast turn advancement to all participants
     await broadcastToSession(id, SessionEvents.TURN_ADVANCED, {

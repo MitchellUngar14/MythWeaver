@@ -4,6 +4,7 @@ import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useSessionStore, type CombatantState } from '@/stores/sessionStore';
+import type { ActionCategory } from '@/lib/combat-actions';
 import { useRealtime } from '@/hooks/useRealtime';
 import { SessionHeader } from '@/components/session/SessionHeader';
 import { CombatTracker } from '@/components/session/CombatTracker';
@@ -16,6 +17,7 @@ import { SessionDMAssistant } from '@/components/session/SessionDMAssistant';
 import { SessionLocationSelector } from '@/components/session/SessionLocationSelector';
 import { LocationCreaturesCard } from '@/components/session/LocationCreaturesCard';
 import { ItemTransferModal } from '@/components/session/ItemTransferModal';
+import { PartyInventoryCard } from '@/components/session/PartyInventoryCard';
 import { Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Character } from '@/lib/schema';
@@ -311,6 +313,33 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     store.setLocation(location, resourceId);
   }
 
+  async function handleTakeAction(combatantId: string, action: {
+    actionId: string;
+    actionName: string;
+    category: ActionCategory;
+    details?: string;
+  }) {
+    const res = await fetch(`/api/sessions/${id}/combat/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        combatantId,
+        ...action,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to take action');
+    }
+
+    const data = await res.json();
+    // Update local state with new action economy
+    store.updateCombatant(combatantId, {
+      actionEconomy: data.actionEconomy,
+    });
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -380,6 +409,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
               onAdvanceTurn={handleAdvanceTurn}
               onEndCombat={handleEndCombat}
               onAddCombatants={handleAddCombatants}
+              onTakeAction={handleTakeAction}
             />
             <ParticipantsList
               participants={store.participants}
@@ -406,6 +436,13 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                   <Package className="w-4 h-4 mr-2" />
                   Give Item to Player
                 </Button>
+
+                {/* Party Inventory - shows all character inventories */}
+                <PartyInventoryCard
+                  participants={store.participants}
+                  sessionId={id}
+                  combatants={store.combatants}
+                />
 
                 <LocationCreaturesCard
                   worldId={store.worldId || ''}

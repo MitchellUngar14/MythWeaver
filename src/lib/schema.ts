@@ -1,5 +1,6 @@
 import { pgTable, uuid, varchar, text, boolean, timestamp, integer, jsonb, unique, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+import type { ActionEconomy } from './combat-actions';
 
 // Users table with profile roles
 export const users = pgTable('users', {
@@ -140,6 +141,7 @@ export const combatInstances = pgTable('combat_instances', {
   isActive: boolean('is_active').default(true),
   showHpToPlayers: boolean('show_hp_to_players').default(false),
   isCompanion: boolean('is_companion').default(false), // NPC fighting with the party
+  actionEconomy: jsonb('action_economy').$type<ActionEconomy>(), // Tracks action/bonus/reaction/movement used this turn
 }, (table) => [
   index('idx_combat_session').on(table.sessionId),
 ]);

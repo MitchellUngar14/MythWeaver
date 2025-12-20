@@ -32,6 +32,7 @@ export const SessionEvents = {
   COMBAT_STARTED: 'combat:started',
   COMBAT_ENDED: 'combat:ended',
   TURN_ADVANCED: 'turn:advanced',
+  ACTION_TAKEN: 'action:taken',
   ROLL_MADE: 'roll:made',
   CHAT_MESSAGE: 'chat:message',
   SESSION_ENDED: 'session:ended',
