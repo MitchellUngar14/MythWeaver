@@ -60,8 +60,8 @@ export async function PATCH(
 
       // Players can only update HP on their own character
       // For now, allow any world member to update (we'll add character ownership check later)
-      if (parsed.data.statusEffects || parsed.data.isActive || parsed.data.position || parsed.data.showHpToPlayers !== undefined) {
-        return NextResponse.json({ error: 'Only the DM can update status effects, activity, initiative, or HP visibility' }, { status: 403 });
+      if (parsed.data.statusEffects || parsed.data.isActive || parsed.data.position || parsed.data.showHpToPlayers !== undefined || parsed.data.isCompanion !== undefined) {
+        return NextResponse.json({ error: 'Only the DM can update status effects, activity, initiative, HP visibility, or companion status' }, { status: 403 });
       }
     }
 

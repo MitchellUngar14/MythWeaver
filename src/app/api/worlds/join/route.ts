@@ -49,14 +49,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if user is the DM of this world
-    if (world.dmId === session.user.id) {
-      return NextResponse.json(
-        { error: 'You are the DM of this world' },
-        { status: 400 }
-      );
-    }
-
     // Check if already a member
     const existingMembership = await db.query.worldMembers.findFirst({
       where: and(

@@ -6,14 +6,34 @@ import { eq, and } from 'drizzle-orm';
 import { createWorldSchema } from '@/lib/validation';
 import { generateRoomKey } from '@/lib/utils';
 
-// GET /api/worlds - List DM's worlds
-export async function GET() {
+// GET /api/worlds - List worlds (DM's worlds or member worlds)
+export async function GET(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { searchParams } = new URL(req.url);
+    const membership = searchParams.get('membership') === 'true';
+
+    if (membership) {
+      // Return worlds the user is a member of (as a player)
+      const memberships = await db.query.worldMembers.findMany({
+        where: eq(worldMembers.userId, session.user.id),
+        with: {
+          world: true,
+        },
+      });
+
+      const memberWorlds = memberships
+        .filter(m => m.world)
+        .map(m => m.world);
+
+      return NextResponse.json({ worlds: memberWorlds });
+    }
+
+    // Default: return worlds where user is DM
     if (!session.user.isDm) {
       return NextResponse.json({ error: 'DM access required' }, { status: 403 });
     }

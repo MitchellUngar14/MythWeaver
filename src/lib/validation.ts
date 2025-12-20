@@ -16,6 +16,29 @@ export const registerSchema = z.object({
   message: 'You must select at least one role (Player or DM)',
 });
 
+// Spell slot schemas
+export const spellSlotSchema = z.object({
+  used: z.number().min(0),
+  max: z.number().min(0),
+});
+
+export const spellSlotsSchema = z.object({
+  level1: spellSlotSchema,
+  level2: spellSlotSchema,
+  level3: spellSlotSchema,
+  level4: spellSlotSchema,
+  level5: spellSlotSchema,
+  level6: spellSlotSchema,
+  level7: spellSlotSchema,
+  level8: spellSlotSchema,
+  level9: spellSlotSchema,
+});
+
+export const spellcastingInfoSchema = z.object({
+  ability: z.enum(['int', 'wis', 'cha']).nullable(),
+  spellSlots: spellSlotsSchema,
+});
+
 // Character schemas
 export const characterStatsSchema = z.object({
   str: z.number().min(1).max(30),
@@ -30,6 +53,116 @@ export const characterStatsSchema = z.object({
   speed: z.number().min(0),
   proficiencyBonus: z.number().min(2).max(6),
   hitDice: z.string(),
+  spellcasting: spellcastingInfoSchema.optional(),
+});
+
+// Proficiency schemas
+export const proficiencyLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+
+export const skillProficienciesSchema = z.object({
+  acrobatics: proficiencyLevelSchema,
+  animalHandling: proficiencyLevelSchema,
+  arcana: proficiencyLevelSchema,
+  athletics: proficiencyLevelSchema,
+  deception: proficiencyLevelSchema,
+  history: proficiencyLevelSchema,
+  insight: proficiencyLevelSchema,
+  intimidation: proficiencyLevelSchema,
+  investigation: proficiencyLevelSchema,
+  medicine: proficiencyLevelSchema,
+  nature: proficiencyLevelSchema,
+  perception: proficiencyLevelSchema,
+  performance: proficiencyLevelSchema,
+  persuasion: proficiencyLevelSchema,
+  religion: proficiencyLevelSchema,
+  sleightOfHand: proficiencyLevelSchema,
+  stealth: proficiencyLevelSchema,
+  survival: proficiencyLevelSchema,
+});
+
+export const savingThrowProficienciesSchema = z.object({
+  str: z.boolean(),
+  dex: z.boolean(),
+  con: z.boolean(),
+  int: z.boolean(),
+  wis: z.boolean(),
+  cha: z.boolean(),
+});
+
+export const characterProficienciesSchema = z.object({
+  skills: skillProficienciesSchema,
+  savingThrows: savingThrowProficienciesSchema,
+  weapons: z.array(z.string()),
+  armor: z.array(z.string()),
+  tools: z.array(z.string()),
+  languages: z.array(z.string()),
+});
+
+// Spell schemas
+export const spellComponentsSchema = z.object({
+  verbal: z.boolean(),
+  somatic: z.boolean(),
+  material: z.boolean(),
+  materialDescription: z.string().optional(),
+  materialCost: z.number().optional(),
+  materialConsumed: z.boolean().optional(),
+});
+
+export const spellSchoolSchema = z.enum([
+  'abjuration',
+  'conjuration',
+  'divination',
+  'enchantment',
+  'evocation',
+  'illusion',
+  'necromancy',
+  'transmutation',
+]);
+
+export const createSpellSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  level: z.number().min(0).max(9),
+  school: spellSchoolSchema,
+  castingTime: z.string().min(1).max(100),
+  range: z.string().min(1).max(100),
+  components: spellComponentsSchema.optional(),
+  duration: z.string().min(1).max(100),
+  concentration: z.boolean().default(false),
+  ritual: z.boolean().default(false),
+  description: z.string().min(1, 'Description is required'),
+  higherLevels: z.string().optional(),
+  classes: z.array(z.string()).default([]),
+  worldId: z.string().uuid().optional(), // null for core spells
+});
+
+export const updateSpellSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  level: z.number().min(0).max(9).optional(),
+  school: spellSchoolSchema.optional(),
+  castingTime: z.string().min(1).max(100).optional(),
+  range: z.string().min(1).max(100).optional(),
+  components: spellComponentsSchema.optional(),
+  duration: z.string().min(1).max(100).optional(),
+  concentration: z.boolean().optional(),
+  ritual: z.boolean().optional(),
+  description: z.string().min(1).optional(),
+  higherLevels: z.string().nullable().optional(),
+  classes: z.array(z.string()).optional(),
+});
+
+export const addCharacterSpellSchema = z.object({
+  spellId: z.string().uuid(),
+  isPrepared: z.boolean().default(false),
+  isAlwaysPrepared: z.boolean().default(false),
+  source: z.string().max(50).optional(),
+  notes: z.string().optional(),
+});
+
+export const updateCharacterSpellSchema = z.object({
+  isPrepared: z.boolean().optional(),
+  isAlwaysPrepared: z.boolean().optional(),
+  source: z.string().max(50).optional(),
+  notes: z.string().nullable().optional(),
 });
 
 export const createCharacterSchema = z.object({
@@ -38,6 +171,18 @@ export const createCharacterSchema = z.object({
   race: z.string().max(50).optional(),
   level: z.number().min(1).max(20).default(1),
   stats: characterStatsSchema,
+  proficiencies: characterProficienciesSchema.optional(),
+  backstory: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const updateCharacterSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  class: z.string().max(50).optional(),
+  race: z.string().max(50).optional(),
+  level: z.number().min(1).max(20).optional(),
+  stats: characterStatsSchema.partial().optional(),
+  proficiencies: characterProficienciesSchema.optional(),
   backstory: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -259,6 +404,7 @@ export const updateCombatantSchema = z.object({
   isActive: z.boolean().optional(),
   position: z.number().optional(),
   showHpToPlayers: z.boolean().optional(),
+  isCompanion: z.boolean().optional(),
 });
 
 export const sessionRollSchema = z.object({
@@ -291,3 +437,11 @@ export type UpdateCharacterItemInput = z.infer<typeof updateCharacterItemSchema>
 export type AddEnemyItemInput = z.infer<typeof addEnemyItemSchema>;
 export type UpdateEnemyItemInput = z.infer<typeof updateEnemyItemSchema>;
 export type ItemTransferInput = z.infer<typeof itemTransferSchema>;
+export type UpdateCharacterInput = z.infer<typeof updateCharacterSchema>;
+export type CharacterProficienciesInput = z.infer<typeof characterProficienciesSchema>;
+export type SpellcastingInfoInput = z.infer<typeof spellcastingInfoSchema>;
+export type SpellSlotsInput = z.infer<typeof spellSlotsSchema>;
+export type CreateSpellInput = z.infer<typeof createSpellSchema>;
+export type UpdateSpellInput = z.infer<typeof updateSpellSchema>;
+export type AddCharacterSpellInput = z.infer<typeof addCharacterSpellSchema>;
+export type UpdateCharacterSpellInput = z.infer<typeof updateCharacterSpellSchema>;

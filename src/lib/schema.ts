@@ -56,6 +56,7 @@ export const characters = pgTable('characters', {
   race: varchar('race', { length: 50 }),
   level: integer('level').default(1),
   stats: jsonb('stats').notNull().$type<CharacterStats>(),
+  proficiencies: jsonb('proficiencies').$type<CharacterProficiencies>(),
   inventory: jsonb('inventory').default([]).$type<InventoryItem[]>(),
   abilities: jsonb('abilities').default([]).$type<Ability[]>(),
   backstory: text('backstory'),
@@ -255,6 +256,48 @@ export const enemyItems = pgTable('enemy_items', {
   index('idx_enemy_items_item').on(table.itemId),
 ]);
 
+// Spells (DM-created or core D&D spells)
+export const spells = pgTable('spells', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  worldId: uuid('world_id').references(() => worlds.id, { onDelete: 'cascade' }), // null = core spell
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  level: integer('level').notNull(), // 0 = cantrip, 1-9 = spell levels
+  school: varchar('school', { length: 20 }).notNull(), // abjuration, conjuration, etc.
+  castingTime: varchar('casting_time', { length: 100 }).notNull(),
+  range: varchar('range', { length: 100 }).notNull(),
+  components: jsonb('components').$type<SpellComponents>(),
+  duration: varchar('duration', { length: 100 }).notNull(),
+  concentration: boolean('concentration').default(false),
+  ritual: boolean('ritual').default(false),
+  description: text('description').notNull(),
+  higherLevels: text('higher_levels'), // at higher levels description
+  classes: jsonb('classes').$type<string[]>().default([]), // which classes can use this spell
+  isCore: boolean('is_core').default(false), // true for built-in D&D spells
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_spells_world').on(table.worldId),
+  index('idx_spells_level').on(table.level),
+  index('idx_spells_school').on(table.school),
+  index('idx_spells_core').on(table.isCore),
+]);
+
+// Character spells (junction table for character spell lists)
+export const characterSpells = pgTable('character_spells', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  characterId: uuid('character_id').references(() => characters.id, { onDelete: 'cascade' }).notNull(),
+  spellId: uuid('spell_id').references(() => spells.id, { onDelete: 'cascade' }).notNull(),
+  isPrepared: boolean('is_prepared').default(false),
+  isAlwaysPrepared: boolean('is_always_prepared').default(false), // from race/class features
+  source: varchar('source', { length: 50 }), // 'class', 'race', 'feat', 'item'
+  notes: text('notes'),
+  addedAt: timestamp('added_at').defaultNow(),
+}, (table) => [
+  index('idx_character_spells_character').on(table.characterId),
+  index('idx_character_spells_spell').on(table.spellId),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   characters: many(characters),
@@ -282,6 +325,7 @@ export const charactersRelations = relations(characters, ({ one, many }) => ({
   world: one(worlds, { fields: [characters.worldId], references: [worlds.id] }),
   history: many(characterHistory),
   items: many(characterItems),
+  spells: many(characterSpells),
 }));
 
 export const gameSessionsRelations = relations(gameSessions, ({ one, many }) => ({
@@ -356,7 +400,84 @@ export const enemyItemsRelations = relations(enemyItems, ({ one }) => ({
   item: one(items, { fields: [enemyItems.itemId], references: [items.id] }),
 }));
 
+export const spellsRelations = relations(spells, ({ one, many }) => ({
+  world: one(worlds, { fields: [spells.worldId], references: [worlds.id] }),
+  createdByUser: one(users, { fields: [spells.createdBy], references: [users.id] }),
+  characterSpells: many(characterSpells),
+}));
+
+export const characterSpellsRelations = relations(characterSpells, ({ one }) => ({
+  character: one(characters, { fields: [characterSpells.characterId], references: [characters.id] }),
+  spell: one(spells, { fields: [characterSpells.spellId], references: [spells.id] }),
+}));
+
 // TypeScript types for JSONB columns
+
+// Proficiency types
+export type ProficiencyLevel = 0 | 1 | 2; // 0=none, 1=proficient, 2=expertise
+
+export interface SkillProficiencies {
+  acrobatics: ProficiencyLevel;
+  animalHandling: ProficiencyLevel;
+  arcana: ProficiencyLevel;
+  athletics: ProficiencyLevel;
+  deception: ProficiencyLevel;
+  history: ProficiencyLevel;
+  insight: ProficiencyLevel;
+  intimidation: ProficiencyLevel;
+  investigation: ProficiencyLevel;
+  medicine: ProficiencyLevel;
+  nature: ProficiencyLevel;
+  perception: ProficiencyLevel;
+  performance: ProficiencyLevel;
+  persuasion: ProficiencyLevel;
+  religion: ProficiencyLevel;
+  sleightOfHand: ProficiencyLevel;
+  stealth: ProficiencyLevel;
+  survival: ProficiencyLevel;
+}
+
+export interface SavingThrowProficiencies {
+  str: boolean;
+  dex: boolean;
+  con: boolean;
+  int: boolean;
+  wis: boolean;
+  cha: boolean;
+}
+
+export interface CharacterProficiencies {
+  skills: SkillProficiencies;
+  savingThrows: SavingThrowProficiencies;
+  weapons: string[]; // ['simple', 'martial', 'longsword', etc.]
+  armor: string[]; // ['light', 'medium', 'heavy', 'shields']
+  tools: string[]; // ["thieves' tools", "smith's tools", etc.]
+  languages: string[]; // ['Common', 'Elvish', 'Dwarvish', etc.]
+}
+
+// Spell slot types
+export interface SpellSlot {
+  used: number;
+  max: number;
+}
+
+export interface SpellSlots {
+  level1: SpellSlot;
+  level2: SpellSlot;
+  level3: SpellSlot;
+  level4: SpellSlot;
+  level5: SpellSlot;
+  level6: SpellSlot;
+  level7: SpellSlot;
+  level8: SpellSlot;
+  level9: SpellSlot;
+}
+
+export interface SpellcastingInfo {
+  ability: 'int' | 'wis' | 'cha' | null;
+  spellSlots: SpellSlots;
+}
+
 export interface CharacterStats {
   str: number;
   dex: number;
@@ -370,6 +491,7 @@ export interface CharacterStats {
   speed: number;
   proficiencyBonus: number;
   hitDice: string;
+  spellcasting?: SpellcastingInfo;
 }
 
 export interface InventoryItem {
@@ -413,6 +535,15 @@ export interface StatusEffect {
   name: string;
   duration?: number;
   description?: string;
+}
+
+export interface SpellComponents {
+  verbal: boolean;
+  somatic: boolean;
+  material: boolean;
+  materialDescription?: string; // e.g., "a pinch of salt"
+  materialCost?: number; // in copper, if consumed/valuable
+  materialConsumed?: boolean;
 }
 
 export interface ItemProperties {
@@ -459,3 +590,7 @@ export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type CharacterItem = typeof characterItems.$inferSelect;
 export type EnemyItem = typeof enemyItems.$inferSelect;
+export type Spell = typeof spells.$inferSelect;
+export type NewSpell = typeof spells.$inferInsert;
+export type CharacterSpell = typeof characterSpells.$inferSelect;
+export type NewCharacterSpell = typeof characterSpells.$inferInsert;

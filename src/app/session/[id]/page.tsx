@@ -318,6 +318,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     actionName: string;
     category: ActionCategory;
     details?: string;
+    spellId?: string;
+    spellLevel?: number;
+    slotLevel?: number;
   }) {
     const res = await fetch(`/api/sessions/${id}/combat/actions`, {
       method: 'POST',
@@ -338,6 +341,75 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     store.updateCombatant(combatantId, {
       actionEconomy: data.actionEconomy,
     });
+
+    // If a spell was cast with a slot, use up the spell slot
+    if (action.slotLevel && action.slotLevel > 0) {
+      // Find the character for this combatant
+      const combatant = store.combatants.find(c => c.id === combatantId);
+      if (combatant?.characterId) {
+        await handleUseSpellSlot(combatant.characterId, action.slotLevel);
+      }
+    }
+  }
+
+  async function handleUseSpellSlot(characterId: string, level: number) {
+    const res = await fetch(`/api/characters/${characterId}/spell-slots`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level, action: 'use' }),
+    });
+
+    if (res.ok && userCharacter?.id === characterId) {
+      // Update local character state
+      const spellcasting = userCharacter.stats.spellcasting;
+      if (spellcasting?.spellSlots) {
+        const slotKey = `level${level}` as keyof typeof spellcasting.spellSlots;
+        const currentSlot = spellcasting.spellSlots[slotKey];
+        if (currentSlot) {
+          const updatedSlots = {
+            ...spellcasting.spellSlots,
+            [slotKey]: { ...currentSlot, used: currentSlot.used + 1 },
+          };
+          setUserCharacter({
+            ...userCharacter,
+            stats: {
+              ...userCharacter.stats,
+              spellcasting: { ...spellcasting, spellSlots: updatedSlots },
+            },
+          });
+        }
+      }
+    }
+  }
+
+  async function handleRestoreSpellSlot(characterId: string, level: number) {
+    const res = await fetch(`/api/characters/${characterId}/spell-slots`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level, action: 'restore' }),
+    });
+
+    if (res.ok && userCharacter?.id === characterId) {
+      // Update local character state
+      const spellcasting = userCharacter.stats.spellcasting;
+      if (spellcasting?.spellSlots) {
+        const slotKey = `level${level}` as keyof typeof spellcasting.spellSlots;
+        const currentSlot = spellcasting.spellSlots[slotKey];
+        if (currentSlot && currentSlot.used > 0) {
+          const updatedSlots = {
+            ...spellcasting.spellSlots,
+            [slotKey]: { ...currentSlot, used: currentSlot.used - 1 },
+          };
+          setUserCharacter({
+            ...userCharacter,
+            stats: {
+              ...userCharacter.stats,
+              spellcasting: { ...spellcasting, spellSlots: updatedSlots },
+            },
+          });
+        }
+      }
+    }
   }
 
   if (isLoading) {
@@ -404,6 +476,27 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
               worldId={store.worldId || ''}
               currentLocation={store.currentLocation}
               currentLocationResourceId={store.currentLocationResourceId}
+              characterSpellSlots={
+                (() => {
+                  const slots: Record<string, import('@/lib/schema').SpellSlots | null> = {};
+
+                  // Add spell slots from participants
+                  sessionData?.participants.forEach((p) => {
+                    if (p.character?.id) {
+                      // Include userCharacter if it matches (for live updates)
+                      const char = userCharacter?.id === p.character.id ? userCharacter : p.character;
+                      slots[p.character.id] = char.stats.spellcasting?.spellSlots || null;
+                    }
+                  });
+
+                  // Also include userCharacter directly (in case DM has a character not in participants)
+                  if (userCharacter?.id && !slots[userCharacter.id]) {
+                    slots[userCharacter.id] = userCharacter.stats.spellcasting?.spellSlots || null;
+                  }
+
+                  return slots;
+                })()
+              }
               onUpdateCombatant={handleUpdateCombatant}
               onRemoveCombatant={handleRemoveCombatant}
               onAdvanceTurn={handleAdvanceTurn}
@@ -424,6 +517,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
               <PlayerCharacterPanel
                 character={userCharacter}
                 onUpdateHp={handleUpdateCharacterHp}
+                onUseSpellSlot={(level) => handleUseSpellSlot(userCharacter.id, level)}
+                onRestoreSpellSlot={(level) => handleRestoreSpellSlot(userCharacter.id, level)}
               />
             ) : store.isDm ? (
               <div className="space-y-4">

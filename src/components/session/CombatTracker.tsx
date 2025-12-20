@@ -8,6 +8,7 @@ import { CombatantCard } from './CombatantCard';
 import { AddCombatantModal } from './AddCombatantModal';
 import type { CombatantState } from '@/stores/sessionStore';
 import type { ActionCategory } from '@/lib/combat-actions';
+import type { SpellSlots } from '@/lib/schema';
 
 interface CombatTrackerProps {
   combatants: CombatantState[];
@@ -20,6 +21,7 @@ interface CombatTrackerProps {
   worldId: string;
   currentLocation: string | null;
   currentLocationResourceId: string | null;
+  characterSpellSlots?: Record<string, SpellSlots | null>; // characterId -> spell slots
   onUpdateCombatant: (id: string, changes: Partial<CombatantState>) => Promise<void>;
   onRemoveCombatant: (id: string) => Promise<void>;
   onAdvanceTurn: () => void;
@@ -30,6 +32,9 @@ interface CombatTrackerProps {
     actionName: string;
     category: ActionCategory;
     details?: string;
+    spellId?: string;
+    spellLevel?: number;
+    slotLevel?: number;
   }) => Promise<void>;
 }
 
@@ -43,6 +48,7 @@ export function CombatTracker({
   worldId,
   currentLocation,
   currentLocationResourceId,
+  characterSpellSlots,
   onUpdateCombatant,
   onRemoveCombatant,
   onAdvanceTurn,
@@ -139,6 +145,7 @@ export function CombatTracker({
                   onRemove={() => onRemoveCombatant(combatant.id)}
                   hideEnemyHp={!isDm}
                   sessionId={sessionId}
+                  spellSlots={combatant.characterId ? characterSpellSlots?.[combatant.characterId] : null}
                   onTakeAction={onTakeAction}
                 />
               ))}

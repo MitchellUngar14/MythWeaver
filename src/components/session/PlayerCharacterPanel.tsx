@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Heart, Shield, Zap, User, Package, Loader2 } from 'lucide-react';
+import { Heart, Shield, Zap, User, Package, Loader2, BookOpen, Sparkles } from 'lucide-react';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Button } from '@/components/ui/button';
 import { getItemTypeIcon, getItemTypeColor, getDamageTypeIcon, getDamageTypeColor } from '@/lib/item-icons';
 import { ItemDetailModal } from './ItemDetailModal';
-import type { Character, Item, ItemProperties } from '@/lib/schema';
+import type { Character, Item, ItemProperties, SpellSlots, SpellSlot, Spell } from '@/lib/schema';
+import { DEFAULT_SPELL_SLOTS } from '@/lib/spell-data';
 
 interface InventoryItem {
   id: string;
@@ -23,17 +24,31 @@ interface SelectedItemState {
   attuned: boolean;
 }
 
+interface CharacterSpell {
+  id: string;
+  spellId: string;
+  isPrepared: boolean;
+  isAlwaysPrepared: boolean;
+  spell: Spell;
+}
+
 interface PlayerCharacterPanelProps {
   character: Character;
   onUpdateHp: (hp: number) => void;
+  onUseSpellSlot?: (level: number) => void;
+  onRestoreSpellSlot?: (level: number) => void;
 }
 
-export function PlayerCharacterPanel({ character, onUpdateHp }: PlayerCharacterPanelProps) {
+export function PlayerCharacterPanel({ character, onUpdateHp, onUseSpellSlot, onRestoreSpellSlot }: PlayerCharacterPanelProps) {
   const { stats } = character;
   const hpPercentage = Math.max(0, Math.min(100, (stats.hp / stats.maxHp) * 100));
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [isLoadingInventory, setIsLoadingInventory] = useState(true);
   const [selectedItem, setSelectedItem] = useState<SelectedItemState | null>(null);
+
+  // Spellcasting
+  const spellcasting = stats.spellcasting;
+  const spellSlots = spellcasting?.spellSlots || DEFAULT_SPELL_SLOTS;
 
   // Fetch inventory on mount
   useEffect(() => {
@@ -152,6 +167,21 @@ export function PlayerCharacterPanel({ character, onUpdateHp }: PlayerCharacterP
           ))}
         </div>
       </div>
+
+      {/* Spell Slots */}
+      {spellcasting && (
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-purple-500" />
+            <p className="text-sm font-medium text-gray-900 dark:text-white">Spell Slots</p>
+          </div>
+          <CompactSpellSlots
+            spellSlots={spellSlots}
+            onUseSlot={onUseSpellSlot}
+            onRestoreSlot={onRestoreSpellSlot}
+          />
+        </div>
+      )}
 
       {/* Inventory */}
       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -276,4 +306,79 @@ function PlayerInventoryItem({ invItem, onClick }: { invItem: InventoryItem; onC
       </div>
     </button>
   );
+}
+
+// Compact spell slot display for the player panel
+function CompactSpellSlots({
+  spellSlots,
+  onUseSlot,
+  onRestoreSlot,
+}: {
+  spellSlots: SpellSlots;
+  onUseSlot?: (level: number) => void;
+  onRestoreSlot?: (level: number) => void;
+}) {
+  const activeSlots = (Object.entries(spellSlots) as [keyof SpellSlots, SpellSlot][])
+    .map(([key, slot], index) => ({
+      level: index + 1,
+      key,
+      ...slot,
+    }))
+    .filter(slot => slot.max > 0);
+
+  if (activeSlots.length === 0) {
+    return (
+      <p className="text-sm text-gray-400 text-center py-2">No spell slots</p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {activeSlots.map((slot) => (
+        <div
+          key={slot.key}
+          className="flex items-center gap-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded"
+        >
+          <span className="text-xs font-medium text-gray-600 dark:text-gray-400 w-8">
+            {slot.level}{getOrdinalSuffix(slot.level)}
+          </span>
+          <div className="flex-1 flex items-center gap-1">
+            {Array.from({ length: slot.max }).map((_, index) => {
+              const isUsed = index < slot.used;
+              return (
+                <button
+                  key={index}
+                  onClick={() => {
+                    if (isUsed) {
+                      onRestoreSlot?.(slot.level);
+                    } else {
+                      onUseSlot?.(slot.level);
+                    }
+                  }}
+                  className={`
+                    w-4 h-4 rounded-full border transition-all
+                    ${isUsed
+                      ? 'bg-gray-300 dark:bg-gray-600 border-gray-400 dark:border-gray-500'
+                      : 'bg-purple-500 border-purple-600'
+                    }
+                    hover:scale-110 cursor-pointer
+                  `}
+                  title={isUsed ? 'Restore slot' : 'Use slot'}
+                />
+              );
+            })}
+          </div>
+          <span className="text-xs text-gray-500 font-mono">
+            {slot.max - slot.used}/{slot.max}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function getOrdinalSuffix(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
 }

@@ -10,6 +10,10 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { calculateModifier, formatModifier, rollDice } from '@/lib/utils';
 import { AIAssistant } from '@/components/dm/AIAssistant';
 import { CharacterInventory } from '@/components/character/CharacterInventory';
+import { CharacterProficiencies } from '@/components/character/CharacterProficiencies';
+import { CharacterSpellbook } from '@/components/character/CharacterSpellbook';
+import type { CharacterProficiencies as CharacterProficienciesType, CharacterStats, SpellcastingInfo, SpellSlots } from '@/lib/schema';
+import { CLASS_SPELLCASTING_ABILITY, getSpellSlotsForClassLevel, DEFAULT_SPELL_SLOTS } from '@/lib/spell-data';
 
 const CHARACTER_QUICK_PROMPTS = [
   { label: 'Backstory Ideas', prompt: 'Suggest a compelling backstory for my character based on their race and class.' },
@@ -40,7 +44,9 @@ interface Character {
     speed: number;
     proficiencyBonus: number;
     hitDice: string;
+    spellcasting?: SpellcastingInfo;
   };
+  proficiencies: CharacterProficienciesType | null;
   backstory: string | null;
   notes: string | null;
   world: {
@@ -64,12 +70,49 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
   const [characterClass, setCharacterClass] = useState('');
   const [race, setRace] = useState('');
   const [level, setLevel] = useState(1);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<{
+    str: number; dex: number; con: number; int: number; wis: number; cha: number;
+    hp: number; maxHp: number; ac: number; speed: number; proficiencyBonus: number; hitDice: string;
+    spellcasting?: SpellcastingInfo;
+  }>({
     str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
     hp: 10, maxHp: 10, ac: 10, speed: 30, proficiencyBonus: 2, hitDice: '1d8',
   });
+  const [proficiencies, setProficiencies] = useState<CharacterProficienciesType | null>(null);
   const [backstory, setBackstory] = useState('');
   const [notes, setNotes] = useState('');
+  const [availableWorlds, setAvailableWorlds] = useState<{ id: string; name: string; isDm: boolean }[]>([]);
+  const [selectedWorldId, setSelectedWorldId] = useState<string | null>(null);
+
+  // Helper to get/set spellcasting ability for current class
+  const spellcastingAbility = CLASS_SPELLCASTING_ABILITY[characterClass] || null;
+
+  function initializeSpellcasting() {
+    if (!spellcastingAbility) {
+      // Remove spellcasting if class is not a spellcaster
+      const { spellcasting: _, ...restStats } = stats;
+      setStats(restStats as typeof stats);
+      return;
+    }
+    // Initialize spellcasting for the class
+    const spellSlots = getSpellSlotsForClassLevel(characterClass, level);
+    setStats(prev => ({
+      ...prev,
+      spellcasting: {
+        ability: spellcastingAbility,
+        spellSlots: prev.spellcasting?.spellSlots || spellSlots,
+      },
+    }));
+  }
+
+  function handleSpellSlotsChange(spellSlots: SpellSlots) {
+    setStats(prev => ({
+      ...prev,
+      spellcasting: prev.spellcasting
+        ? { ...prev.spellcasting, spellSlots }
+        : { ability: spellcastingAbility, spellSlots },
+    }));
+  }
 
   useEffect(() => {
     fetchCharacter();
@@ -107,13 +150,47 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
         speed: char.stats?.speed || 30,
         proficiencyBonus: char.stats?.proficiencyBonus || 2,
         hitDice: char.stats?.hitDice || '1d8',
+        spellcasting: char.stats?.spellcasting || undefined,
       });
+      setProficiencies(char.proficiencies || null);
       setBackstory(char.backstory || '');
       setNotes(char.notes || '');
+      setSelectedWorldId(char.world?.id || null);
+
+      // Fetch available worlds for the user
+      fetchAvailableWorlds();
     } catch (err) {
       setError('Failed to load character');
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function fetchAvailableWorlds() {
+    try {
+      // Fetch worlds user is DM of
+      const dmWorldsRes = await fetch('/api/worlds');
+      const dmWorldsData = await dmWorldsRes.json();
+      const dmWorlds = (dmWorldsData.worlds || []).map((w: { id: string; name: string }) => ({
+        id: w.id,
+        name: w.name,
+        isDm: true,
+      }));
+
+      // Fetch worlds user is a member of
+      const memberWorldsRes = await fetch('/api/worlds?membership=true');
+      const memberWorldsData = await memberWorldsRes.json();
+      const memberWorlds = (memberWorldsData.worlds || [])
+        .filter((w: { id: string }) => !dmWorlds.some((dw: { id: string }) => dw.id === w.id))
+        .map((w: { id: string; name: string }) => ({
+          id: w.id,
+          name: w.name,
+          isDm: false,
+        }));
+
+      setAvailableWorlds([...dmWorlds, ...memberWorlds]);
+    } catch (err) {
+      console.error('Failed to fetch available worlds:', err);
     }
   }
 
@@ -153,8 +230,10 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
           race,
           level,
           stats,
+          proficiencies,
           backstory,
           notes,
+          worldId: selectedWorldId,
         }),
       });
 
@@ -164,6 +243,13 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
         setError(data.error || 'Failed to save character');
         return;
       }
+
+      // Update character state with new world info
+      const selectedWorld = availableWorlds.find(w => w.id === selectedWorldId);
+      setCharacter(prev => prev ? {
+        ...prev,
+        world: selectedWorld ? { id: selectedWorld.id, name: selectedWorld.name } : null,
+      } : null);
 
       setSuccessMessage('Character saved successfully!');
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -310,6 +396,33 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
                   disabled={!canEdit}
                 />
               </div>
+
+              {/* World Assignment */}
+              {canEdit && availableWorlds.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <span className="flex items-center gap-1">
+                      <Globe className="w-4 h-4" />
+                      World
+                    </span>
+                  </label>
+                  <select
+                    value={selectedWorldId || ''}
+                    onChange={(e) => setSelectedWorldId(e.target.value || null)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                  >
+                    <option value="">No world (unassigned)</option>
+                    {availableWorlds.map(world => (
+                      <option key={world.id} value={world.id}>
+                        {world.name} {world.isDm ? '(DM)' : '(Member)'}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Assign this character to a world to access world-specific items and spells
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -416,12 +529,58 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
             </CardContent>
           </Card>
 
+          {/* Proficiencies */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Proficiencies</CardTitle>
+              <CardDescription>Skills, saving throws, and other proficiencies</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CharacterProficiencies
+                proficiencies={proficiencies}
+                stats={stats as CharacterStats}
+                editable={canEdit}
+                onChange={setProficiencies}
+              />
+            </CardContent>
+          </Card>
+
           {/* Inventory */}
           <CharacterInventory
             characterId={id}
             worldId={character?.world?.id || null}
             canEdit={canEdit}
           />
+
+          {/* Spellbook */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Spellbook</CardTitle>
+                  <CardDescription>
+                    {spellcastingAbility
+                      ? `Spellcasting ability: ${spellcastingAbility.toUpperCase()}`
+                      : 'Enable spellcasting by selecting a spellcasting class'}
+                  </CardDescription>
+                </div>
+                {canEdit && spellcastingAbility && !stats.spellcasting && (
+                  <Button variant="outline" size="sm" onClick={initializeSpellcasting}>
+                    Enable Spellcasting
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CharacterSpellbook
+                characterId={id}
+                worldId={character?.world?.id || null}
+                spellcasting={stats.spellcasting || null}
+                canEdit={canEdit}
+                onSpellSlotsChange={handleSpellSlotsChange}
+              />
+            </CardContent>
+          </Card>
 
           {/* Backstory */}
           <Card>

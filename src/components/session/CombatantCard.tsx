@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Heart, Shield, Trash2, Skull, Eye, EyeOff, Users, Swords, Zap, Circle, Check } from 'lucide-react';
+import { Heart, Shield, Trash2, Skull, Eye, EyeOff, Users, Swords, Zap, Circle, Check, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { CombatantState } from '@/stores/sessionStore';
+import type { SpellSlots, SpellSlot } from '@/lib/schema';
 import { CombatActionModal } from './CombatActionModal';
 import { DEFAULT_ACTION_ECONOMY, type ActionCategory } from '@/lib/combat-actions';
 
@@ -17,11 +18,15 @@ interface CombatantCardProps {
   onRemove: () => void;
   hideEnemyHp?: boolean; // Hide exact HP values for enemies (players only see health bar)
   sessionId?: string; // Required for taking actions
+  spellSlots?: SpellSlots | null; // Character's spell slots
   onTakeAction?: (combatantId: string, action: {
     actionId: string;
     actionName: string;
     category: ActionCategory;
     details?: string;
+    spellId?: string;
+    spellLevel?: number;
+    slotLevel?: number;
   }) => Promise<void>;
 }
 
@@ -34,6 +39,7 @@ export function CombatantCard({
   onRemove,
   hideEnemyHp = false,
   sessionId,
+  spellSlots,
   onTakeAction,
 }: CombatantCardProps) {
   const [showHpInput, setShowHpInput] = useState(false);
@@ -195,6 +201,11 @@ export function CombatantCard({
         </div>
       </div>
 
+      {/* Spell Slots - Show for characters with spell slots */}
+      {spellSlots && combatant.type === 'character' && (
+        <CompactSpellSlots spellSlots={spellSlots} />
+      )}
+
       {/* Action Economy Indicator - Only show for current turn */}
       {isCurrentTurn && !isDead && (
         <div className="flex items-center justify-between gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
@@ -323,12 +334,57 @@ export function CombatantCard({
         <CombatActionModal
           combatant={combatant}
           sessionId={sessionId}
+          characterId={combatant.characterId}
+          spellSlots={spellSlots}
           onClose={() => setShowActionModal(false)}
           onActionTaken={async (action) => {
             await onTakeAction(combatant.id, action);
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Compact spell slot display for combat cards
+function CompactSpellSlots({ spellSlots }: { spellSlots: SpellSlots }) {
+  // Get active slot levels (those with max > 0)
+  const activeSlots: { level: number; used: number; max: number }[] = [];
+
+  for (let level = 1; level <= 9; level++) {
+    const slotKey = `level${level}` as keyof SpellSlots;
+    const slot = spellSlots[slotKey];
+    if (slot && slot.max > 0) {
+      activeSlots.push({ level, used: slot.used, max: slot.max });
+    }
+  }
+
+  if (activeSlots.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 mb-2 px-1">
+      <Sparkles className="w-3 h-3 text-purple-500 flex-shrink-0" />
+      <div className="flex items-center gap-2 flex-wrap">
+        {activeSlots.map(({ level, used, max }) => (
+          <div key={level} className="flex items-center gap-0.5" title={`Level ${level}: ${max - used}/${max} remaining`}>
+            <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400 w-3">
+              {level}
+            </span>
+            <div className="flex gap-0.5">
+              {Array.from({ length: max }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`w-2 h-2 rounded-full border ${
+                    idx < used
+                      ? 'bg-gray-300 dark:bg-gray-600 border-gray-400 dark:border-gray-500'
+                      : 'bg-purple-500 border-purple-600'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

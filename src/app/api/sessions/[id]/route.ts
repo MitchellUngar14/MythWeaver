@@ -83,20 +83,19 @@ export async function GET(
       timestamp: m.createdAt,
     }));
 
-    // Get user's character in this world (if player)
+    // Get user's character in this world (for both DM and players)
+    // DMs may also have characters in combat (e.g., NPCs they control or their own PC)
     let userCharacter = null;
-    if (!isDm) {
-      const membership = await db.query.worldMembers.findFirst({
-        where: and(
-          eq(worldMembers.worldId, gameSession.worldId),
-          eq(worldMembers.userId, session.user.id)
-        ),
-        with: {
-          character: true,
-        },
-      });
-      userCharacter = membership?.character || null;
-    }
+    const membership = await db.query.worldMembers.findFirst({
+      where: and(
+        eq(worldMembers.worldId, gameSession.worldId),
+        eq(worldMembers.userId, session.user.id)
+      ),
+      with: {
+        character: true,
+      },
+    });
+    userCharacter = membership?.character || null;
 
     // Filter active combatants, add type, and sort by initiative
     const activeCombatants = gameSession.combatInstances

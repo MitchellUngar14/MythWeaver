@@ -8,7 +8,7 @@ import { eq, and } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 import {
   Users, Crown, Globe, Dice6, Sword, Plus,
-  ArrowRight, LogOut, Settings, Play, Package
+  ArrowRight, LogOut, Settings, Play, Package, BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -234,6 +234,15 @@ export default async function DashboardPage() {
                     <ArrowRight className="w-5 h-5 text-gray-400" />
                   </div>
                 </Link>
+                <Link href="/dm/spells" className="block">
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <BookOpen className="w-5 h-5 text-gray-500" />
+                      <span className="font-medium">Spell Library</span>
+                    </div>
+                    <ArrowRight className="w-5 h-5 text-gray-400" />
+                  </div>
+                </Link>
               </CardContent>
             </Card>
           )}
@@ -280,6 +289,12 @@ export default async function DashboardPage() {
                 <Button variant="outline" className="w-full justify-start gap-2">
                   <Package className="w-5 h-5" />
                   New Item
+                </Button>
+              </Link>
+              <Link href="/dm/spells/new">
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <BookOpen className="w-5 h-5" />
+                  New Spell
                 </Button>
               </Link>
             </div>

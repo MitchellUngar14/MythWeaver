@@ -81,11 +81,45 @@ export async function PATCH(
       race,
       level,
       stats,
+      proficiencies,
       inventory,
       abilities,
       backstory,
       notes,
+      worldId,
     } = body;
+
+    // If worldId is being changed, verify the user has access to the target world
+    if (worldId !== undefined) {
+      if (worldId === null) {
+        // Removing from world is always allowed
+      } else {
+        // Check if user is DM of this world OR a member of this world
+        const world = await db.query.worlds.findFirst({
+          where: eq(worlds.id, worldId),
+        });
+
+        if (!world) {
+          return NextResponse.json({ error: 'World not found' }, { status: 404 });
+        }
+
+        const isDmOfWorld = world.dmId === session.user.id;
+
+        if (!isDmOfWorld) {
+          // Check if user is a member of the world
+          const membership = await db.query.worldMembers.findFirst({
+            where: and(
+              eq(worldMembers.worldId, worldId),
+              eq(worldMembers.userId, session.user.id)
+            ),
+          });
+
+          if (!membership) {
+            return NextResponse.json({ error: 'You must be a member or DM of this world' }, { status: 403 });
+          }
+        }
+      }
+    }
 
     // Save history before updating
     await db.insert(characterHistory).values({
@@ -97,6 +131,7 @@ export async function PATCH(
         race: character.race,
         level: character.level,
         stats: character.stats,
+        proficiencies: character.proficiencies,
         inventory: character.inventory,
         abilities: character.abilities,
       },
@@ -109,10 +144,12 @@ export async function PATCH(
         ...(race !== undefined && { race }),
         ...(level !== undefined && { level }),
         ...(stats && { stats }),
+        ...(proficiencies !== undefined && { proficiencies }),
         ...(inventory && { inventory }),
         ...(abilities && { abilities }),
         ...(backstory !== undefined && { backstory }),
         ...(notes !== undefined && { notes }),
+        ...(worldId !== undefined && { worldId }),
         version: (character.version ?? 0) + 1,
         updatedAt: new Date(),
       })
