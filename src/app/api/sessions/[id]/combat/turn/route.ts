@@ -38,6 +38,11 @@ export async function POST(
       return NextResponse.json({ error: 'Only the DM can advance turns' }, { status: 403 });
     }
 
+    // Persist turn state to database
+    await db.update(gameSessions)
+      .set({ currentTurnId: currentTurn, combatRound: round })
+      .where(eq(gameSessions.id, id));
+
     // Broadcast turn advancement to all participants
     await broadcastToSession(id, SessionEvents.TURN_ADVANCED, {
       currentTurn,

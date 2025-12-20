@@ -13,6 +13,11 @@ import { RollHistory } from '@/components/session/RollHistory';
 import { ParticipantsList } from '@/components/session/ParticipantsList';
 import { PlayerCharacterPanel } from '@/components/session/PlayerCharacterPanel';
 import { SessionDMAssistant } from '@/components/session/SessionDMAssistant';
+import { SessionLocationSelector } from '@/components/session/SessionLocationSelector';
+import { LocationCreaturesCard } from '@/components/session/LocationCreaturesCard';
+import { ItemTransferModal } from '@/components/session/ItemTransferModal';
+import { Package } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { Character } from '@/lib/schema';
 
 interface SessionData {
@@ -21,6 +26,10 @@ interface SessionData {
     name: string;
     worldId: string;
     isActive: boolean;
+    combatRound: number | null;
+    currentTurnId: string | null;
+    currentLocation: string | null;
+    currentLocationResourceId: string | null;
   };
   worldName: string;
   isDm: boolean;
@@ -60,6 +69,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [userCharacter, setUserCharacter] = useState<Character | null>(null);
   const [dmId, setDmId] = useState<string>('');
+  const [showItemTransfer, setShowItemTransfer] = useState(false);
 
   const store = useSessionStore();
   const { isConnected } = useRealtime(store.sessionId);
@@ -94,6 +104,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           worldName: data.worldName,
           isActive: data.session.isActive,
           isDm: data.isDm,
+          currentLocation: data.session.currentLocation,
+          currentLocationResourceId: data.session.currentLocationResourceId,
         });
 
         // Set participants
@@ -108,9 +120,15 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           });
         });
 
-        // Set combatants
+        // Set combatants and restore combat state
         if (data.combatants.length > 0) {
           store.startCombat(data.combatants);
+          // Restore saved round and current turn from session
+          const savedRound = data.session.combatRound || 1;
+          const savedTurn = data.session.currentTurnId || data.combatants[0]?.id;
+          if (savedTurn) {
+            store.advanceTurn(savedTurn, savedRound);
+          }
         }
 
         // Set chat messages
@@ -289,6 +307,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     }
   }
 
+  function handleLocationChange(location: string | null, resourceId: string | null) {
+    store.setLocation(location, resourceId);
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -326,6 +348,18 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         onEndSession={handleEndSession}
       />
 
+      {/* Location Selector */}
+      <div className="container mx-auto px-4 py-2">
+        <SessionLocationSelector
+          worldId={store.worldId || ''}
+          sessionId={id}
+          currentLocation={store.currentLocation}
+          currentLocationResourceId={store.currentLocationResourceId}
+          isDm={store.isDm}
+          onLocationChange={handleLocationChange}
+        />
+      </div>
+
       <div className="flex-1 container mx-auto px-4 py-4">
         <div className="grid lg:grid-cols-12 gap-4 h-full">
           {/* Left Column - Combat & Participants */}
@@ -339,6 +373,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
               userId={authSession?.user?.id || ''}
               sessionId={id}
               worldId={store.worldId || ''}
+              currentLocation={store.currentLocation}
+              currentLocationResourceId={store.currentLocationResourceId}
               onUpdateCombatant={handleUpdateCombatant}
               onRemoveCombatant={handleRemoveCombatant}
               onAdvanceTurn={handleAdvanceTurn}
@@ -360,11 +396,33 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                 onUpdateHp={handleUpdateCharacterHp}
               />
             ) : store.isDm ? (
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 text-center">
-                <p className="text-gray-500">DM View</p>
-                <p className="text-sm text-gray-400 mt-2">
-                  Use the combat tracker to manage the encounter
-                </p>
+              <div className="space-y-4">
+                {/* Give Item Button */}
+                <Button
+                  onClick={() => setShowItemTransfer(true)}
+                  className="w-full"
+                  variant="outline"
+                >
+                  <Package className="w-4 h-4 mr-2" />
+                  Give Item to Player
+                </Button>
+
+                <LocationCreaturesCard
+                  worldId={store.worldId || ''}
+                  currentLocation={store.currentLocation}
+                  currentLocationResourceId={store.currentLocationResourceId}
+                  onAddToCombat={(creature, count) => {
+                    // Quick add multiple with random initiative for each
+                    const dexMod = Math.floor((creature.stats.dex - 10) / 2);
+                    const combatantsToAdd = Array.from({ length: count }, (_, i) => ({
+                      type: 'enemy' as const,
+                      templateId: creature.id,
+                      initiative: Math.floor(Math.random() * 20) + 1 + dexMod,
+                      customName: count > 1 ? `${creature.name} ${i + 1}` : undefined,
+                    }));
+                    handleAddCombatants(combatantsToAdd);
+                  }}
+                />
               </div>
             ) : (
               <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 text-center">
@@ -411,6 +469,19 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           combatants={store.combatants}
           combatActive={store.combatActive}
           round={store.round}
+          currentLocation={store.currentLocation}
+          currentLocationResourceId={store.currentLocationResourceId}
+        />
+      )}
+
+      {/* Item Transfer Modal */}
+      {showItemTransfer && (
+        <ItemTransferModal
+          sessionId={id}
+          onClose={() => setShowItemTransfer(false)}
+          onTransferComplete={() => {
+            // Could refresh character data or show notification
+          }}
         />
       )}
     </div>

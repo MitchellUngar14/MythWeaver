@@ -17,6 +17,8 @@ interface CombatTrackerProps {
   userId: string;
   sessionId: string;
   worldId: string;
+  currentLocation: string | null;
+  currentLocationResourceId: string | null;
   onUpdateCombatant: (id: string, changes: Partial<CombatantState>) => Promise<void>;
   onRemoveCombatant: (id: string) => Promise<void>;
   onAdvanceTurn: () => void;
@@ -31,6 +33,8 @@ export function CombatTracker({
   combatActive,
   isDm,
   worldId,
+  currentLocation,
+  currentLocationResourceId,
   onUpdateCombatant,
   onRemoveCombatant,
   onAdvanceTurn,
@@ -137,6 +141,8 @@ export function CombatTracker({
         <AddCombatantModal
           worldId={worldId}
           isDm={isDm}
+          currentLocation={currentLocation}
+          currentLocationResourceId={currentLocationResourceId}
           onAdd={async (combatantsList) => {
             await onAddCombatants(combatantsList);
             setShowAddModal(false);

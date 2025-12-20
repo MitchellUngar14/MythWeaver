@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { enemyTemplates } from '@/lib/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, isNull } from 'drizzle-orm';
 
 // GET /api/enemies/[id] - Get enemy template details
 export async function GET(
@@ -24,8 +24,13 @@ export async function GET(
     const enemy = await db.query.enemyTemplates.findFirst({
       where: and(
         eq(enemyTemplates.id, id),
-        eq(enemyTemplates.dmId, session.user.id)
+        eq(enemyTemplates.dmId, session.user.id),
+        or(eq(enemyTemplates.isNpc, false), isNull(enemyTemplates.isNpc))
       ),
+      with: {
+        world: true,
+        locationResource: true,
+      },
     });
 
     if (!enemy) {
@@ -69,7 +74,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { name, stats, abilities, description, challengeRating, worldId } = body;
+    const { name, stats, abilities, description, challengeRating, worldId, location, locationResourceId } = body;
 
     const [updated] = await db.update(enemyTemplates)
       .set({
@@ -79,6 +84,8 @@ export async function PATCH(
         ...(description !== undefined && { description }),
         ...(challengeRating !== undefined && { challengeRating }),
         ...(worldId !== undefined && { worldId: worldId || null }),
+        ...(location !== undefined && { location: location || null }),
+        ...(locationResourceId !== undefined && { locationResourceId: locationResourceId || null }),
       })
       .where(eq(enemyTemplates.id, id))
       .returning();

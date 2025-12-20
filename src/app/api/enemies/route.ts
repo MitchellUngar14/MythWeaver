@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { enemyTemplates } from '@/lib/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and, or, isNull } from 'drizzle-orm';
 import { createEnemyTemplateSchema } from '@/lib/validation';
 
-// GET /api/enemies - List DM's enemy templates
-export async function GET() {
+// GET /api/enemies - List DM's enemy templates (excludes NPCs unless filtering by location)
+export async function GET(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) {
@@ -17,9 +17,36 @@ export async function GET() {
       return NextResponse.json({ error: 'DM access required' }, { status: 403 });
     }
 
+    const { searchParams } = new URL(req.url);
+    const worldId = searchParams.get('worldId');
+    const locationResourceId = searchParams.get('locationResourceId');
+    const location = searchParams.get('location');
+
+    // Build conditions array
+    const conditions = [eq(enemyTemplates.dmId, session.user.id)];
+
+    // Filter by world if specified
+    if (worldId) {
+      conditions.push(eq(enemyTemplates.worldId, worldId));
+    }
+
+    // Filter by location if specified (includes both NPCs and enemies)
+    if (locationResourceId) {
+      conditions.push(eq(enemyTemplates.locationResourceId, locationResourceId));
+    } else if (location) {
+      conditions.push(eq(enemyTemplates.location, location));
+    } else {
+      // When not filtering by location, exclude NPCs (default behavior)
+      conditions.push(or(eq(enemyTemplates.isNpc, false), isNull(enemyTemplates.isNpc))!);
+    }
+
     const templates = await db.query.enemyTemplates.findMany({
-      where: eq(enemyTemplates.dmId, session.user.id),
+      where: and(...conditions),
       orderBy: (templates, { desc }) => [desc(templates.createdAt)],
+      with: {
+        world: true,
+        locationResource: true,
+      },
     });
 
     return NextResponse.json({ enemies: templates });
@@ -51,7 +78,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, stats, abilities, description, challengeRating, worldId } = validation.data;
+    const { name, stats, abilities, description, challengeRating, worldId, location, locationResourceId } = validation.data;
 
     const [newEnemy] = await db.insert(enemyTemplates).values({
       dmId: session.user.id,
@@ -61,6 +88,9 @@ export async function POST(req: NextRequest) {
       description,
       challengeRating,
       worldId,
+      location,
+      locationResourceId,
+      isNpc: false,
     }).returning();
 
     return NextResponse.json({ enemy: newEnemy }, { status: 201 });

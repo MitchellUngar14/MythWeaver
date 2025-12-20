@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { calculateModifier, formatModifier } from '@/lib/utils';
 import { AIAssistant } from '@/components/dm/AIAssistant';
+import { EnemyInventory } from '@/components/enemy/EnemyInventory';
 
 const ENEMY_QUICK_PROMPTS = [
   { label: 'Suggest Stats', prompt: 'Suggest appropriate ability scores (STR, DEX, CON, INT, WIS, CHA) for this enemy based on its type and CR.' },
@@ -60,6 +61,13 @@ interface World {
   name: string;
 }
 
+interface LocationResource {
+  id: string;
+  name: string;
+  description: string | null;
+  parentId: string | null;
+}
+
 export default function EditEnemyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -74,6 +82,12 @@ export default function EditEnemyPage({ params }: { params: Promise<{ id: string
   const [description, setDescription] = useState('');
   const [challengeRating, setChallengeRating] = useState('');
   const [worldId, setWorldId] = useState('');
+
+  // Location
+  const [locations, setLocations] = useState<LocationResource[]>([]);
+  const [locationResourceId, setLocationResourceId] = useState('');
+  const [customLocation, setCustomLocation] = useState('');
+  const [useCustomLocation, setUseCustomLocation] = useState(false);
 
   // Stats
   const [stats, setStats] = useState({
@@ -115,6 +129,14 @@ export default function EditEnemyPage({ params }: { params: Promise<{ id: string
     fetchWorlds();
   }, [id]);
 
+  useEffect(() => {
+    if (worldId) {
+      fetchLocations(worldId);
+    } else {
+      setLocations([]);
+    }
+  }, [worldId]);
+
   async function fetchEnemy() {
     try {
       const res = await fetch(`/api/enemies/${id}`);
@@ -130,6 +152,15 @@ export default function EditEnemyPage({ params }: { params: Promise<{ id: string
       setDescription(enemy.description || '');
       setChallengeRating(enemy.challengeRating || '');
       setWorldId(enemy.worldId || '');
+
+      // Load location data
+      if (enemy.locationResourceId) {
+        setLocationResourceId(enemy.locationResourceId);
+        setUseCustomLocation(false);
+      } else if (enemy.location) {
+        setCustomLocation(enemy.location);
+        setUseCustomLocation(true);
+      }
 
       if (enemy.stats) {
         setStats({
@@ -172,6 +203,48 @@ export default function EditEnemyPage({ params }: { params: Promise<{ id: string
     } catch (err) {
       console.error('Failed to fetch worlds:', err);
     }
+  }
+
+  async function fetchLocations(wId: string) {
+    try {
+      const res = await fetch(`/api/worlds/${wId}/resources?type=location`);
+      const data = await res.json();
+      if (res.ok) {
+        setLocations(data.resources || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch locations:', err);
+    }
+  }
+
+  // Get full path for a location (e.g., "Bludhaven > Tavern")
+  function getLocationPath(locationId: string): string {
+    const parts: string[] = [];
+    let current = locations.find(l => l.id === locationId);
+    while (current) {
+      parts.unshift(current.name);
+      current = current.parentId ? locations.find(l => l.id === current!.parentId) : undefined;
+    }
+    return parts.join(' > ');
+  }
+
+  // Sort locations so parents come before children, with hierarchy shown
+  function getSortedLocations(): LocationResource[] {
+    const result: Array<LocationResource & { depth: number }> = [];
+
+    function addWithChildren(parentId: string | null, depth: number) {
+      const children = locations
+        .filter(l => l.parentId === parentId)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      for (const child of children) {
+        result.push({ ...child, depth });
+        addWithChildren(child.id, depth + 1);
+      }
+    }
+
+    addWithChildren(null, 0);
+    return result;
   }
 
   function updateStat(stat: string, value: number) {
@@ -245,6 +318,8 @@ export default function EditEnemyPage({ params }: { params: Promise<{ id: string
           description: description || undefined,
           challengeRating: challengeRating || undefined,
           worldId: worldId || undefined,
+          location: useCustomLocation ? customLocation : undefined,
+          locationResourceId: locationResourceId || undefined,
           stats: {
             ...stats,
             attacks: attacks.map(({ id: _, ...rest }) => rest),
@@ -376,6 +451,46 @@ export default function EditEnemyPage({ params }: { params: Promise<{ id: string
                   </select>
                 </div>
               </div>
+
+              {/* Location dropdown - only shown when a world is selected */}
+              {worldId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Location (Optional)
+                  </label>
+                  <select
+                    value={useCustomLocation ? '__other__' : locationResourceId}
+                    onChange={(e) => {
+                      if (e.target.value === '__other__') {
+                        setUseCustomLocation(true);
+                        setLocationResourceId('');
+                      } else {
+                        setUseCustomLocation(false);
+                        setLocationResourceId(e.target.value);
+                        setCustomLocation('');
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                  >
+                    <option value="">No location</option>
+                    {getSortedLocations().map(loc => (
+                      <option key={loc.id} value={loc.id}>
+                        {getLocationPath(loc.id)}
+                      </option>
+                    ))}
+                    <option value="__other__">Other (custom location)</option>
+                  </select>
+                  {useCustomLocation && (
+                    <Input
+                      id="customLocation"
+                      placeholder="Enter custom location..."
+                      value={customLocation}
+                      onChange={(e) => setCustomLocation(e.target.value)}
+                      className="mt-2"
+                    />
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -696,6 +811,12 @@ export default function EditEnemyPage({ params }: { params: Promise<{ id: string
               )}
             </CardContent>
           </Card>
+
+          {/* Inventory */}
+          <EnemyInventory
+            templateId={id}
+            worldId={worldId || null}
+          />
 
           {/* Actions */}
           <div className="flex gap-4">

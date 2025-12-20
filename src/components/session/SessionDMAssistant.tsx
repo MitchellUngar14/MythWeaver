@@ -16,6 +16,19 @@ interface ParticipantWithCharacter {
   character: Character | null;
 }
 
+interface LocationInfo {
+  name: string;
+  description: string | null;
+}
+
+interface LocationCreature {
+  id: string;
+  name: string;
+  isNpc: boolean;
+  description: string | null;
+  challengeRating: string | null;
+}
+
 interface SessionDMAssistantProps {
   worldId: string;
   worldName: string;
@@ -25,6 +38,8 @@ interface SessionDMAssistantProps {
   combatants: CombatantState[];
   combatActive: boolean;
   round: number;
+  currentLocation: string | null;
+  currentLocationResourceId: string | null;
 }
 
 interface Message {
@@ -33,13 +48,34 @@ interface Message {
   content: string;
 }
 
-const SESSION_QUICK_PROMPTS = [
-  { label: 'Spell lookup', prompt: 'I need to look up a spell. What spell would you like details on?' },
-  { label: 'Rules check', prompt: 'I have a D&D 5e rules question.' },
-  { label: 'Describe scene', prompt: 'Describe the current scene with rich sensory details for the party.' },
-  { label: 'NPC reaction', prompt: 'How would the NPC react to what just happened?' },
-  { label: 'Combat idea', prompt: 'Suggest an interesting tactical action for the current encounter.' },
-];
+function getQuickPrompts(locationInfo: LocationInfo | null, locationCreatures: LocationCreature[]) {
+  let describeScenePrompt = 'Describe the current scene with rich sensory details for the party.';
+
+  if (locationInfo) {
+    describeScenePrompt = `Describe the scene at "${locationInfo.name}" with rich sensory details for the party.`;
+    if (locationInfo.description) {
+      describeScenePrompt += ' Use the location description as a starting point and expand on it.';
+    }
+    if (locationCreatures.length > 0) {
+      const npcs = locationCreatures.filter(c => c.isNpc);
+      const enemies = locationCreatures.filter(c => !c.isNpc);
+      if (npcs.length > 0) {
+        describeScenePrompt += ` Include the NPCs present at this location (${npcs.map(n => n.name).join(', ')}) in the scene.`;
+      }
+      if (enemies.length > 0) {
+        describeScenePrompt += ` There may also be threats nearby.`;
+      }
+    }
+  }
+
+  return [
+    { label: 'Spell lookup', prompt: 'I need to look up a spell. What spell would you like details on?' },
+    { label: 'Rules check', prompt: 'I have a D&D 5e rules question.' },
+    { label: 'Describe scene', prompt: describeScenePrompt },
+    { label: 'NPC reaction', prompt: 'How would the NPC react to what just happened?' },
+    { label: 'Combat idea', prompt: 'Suggest an interesting tactical action for the current encounter.' },
+  ];
+}
 
 export function SessionDMAssistant({
   worldId,
@@ -49,6 +85,8 @@ export function SessionDMAssistant({
   combatants,
   combatActive,
   round,
+  currentLocation,
+  currentLocationResourceId,
 }: SessionDMAssistantProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -59,7 +97,78 @@ export function SessionDMAssistant({
   const [includedParticipants, setIncludedParticipants] = useState<Set<string>>(() =>
     new Set(participants.filter(p => p.character).map(p => p.id))
   );
+  const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
+  const [locationCreatures, setLocationCreatures] = useState<LocationCreature[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch location details and creatures when location changes
+  useEffect(() => {
+    async function fetchLocationInfo() {
+      if (currentLocationResourceId && worldId) {
+        try {
+          const res = await fetch(`/api/worlds/${worldId}/resources/${currentLocationResourceId}`);
+          const data = await res.json();
+          if (res.ok && data.resource) {
+            setLocationInfo({
+              name: data.resource.name,
+              description: data.resource.description,
+            });
+          } else {
+            setLocationInfo(null);
+          }
+        } catch {
+          setLocationInfo(null);
+        }
+      } else if (currentLocation) {
+        // Custom location without resource ID
+        setLocationInfo({
+          name: currentLocation,
+          description: null,
+        });
+      } else {
+        setLocationInfo(null);
+      }
+    }
+
+    async function fetchLocationCreatures() {
+      if (!worldId) {
+        setLocationCreatures([]);
+        return;
+      }
+
+      try {
+        // Fetch enemies and NPCs that are at the current location
+        let url = `/api/enemies?worldId=${worldId}`;
+        if (currentLocationResourceId) {
+          url += `&locationResourceId=${currentLocationResourceId}`;
+        } else if (currentLocation) {
+          url += `&location=${encodeURIComponent(currentLocation)}`;
+        } else {
+          setLocationCreatures([]);
+          return;
+        }
+
+        const res = await fetch(url);
+        const data = await res.json();
+        if (res.ok && data.enemies) {
+          setLocationCreatures(data.enemies.map((e: { id: string; name: string; isNpc: boolean; description: string | null; challengeRating: string | null }) => ({
+            id: e.id,
+            name: e.name,
+            isNpc: e.isNpc || false,
+            description: e.description,
+            challengeRating: e.challengeRating,
+          })));
+        } else {
+          setLocationCreatures([]);
+        }
+      } catch {
+        setLocationCreatures([]);
+      }
+    }
+
+    fetchLocationInfo();
+    fetchLocationCreatures();
+  }, [currentLocationResourceId, currentLocation, worldId]);
 
   // Update included participants when participants change
   useEffect(() => {
@@ -91,6 +200,42 @@ export function SessionDMAssistant({
     );
 
     let context = `SESSION: ${sessionName}\nWORLD: ${worldName}\n`;
+
+    // Add current location
+    if (locationInfo) {
+      context += `\nCURRENT LOCATION: ${locationInfo.name}\n`;
+      if (locationInfo.description) {
+        context += `Location Description: ${locationInfo.description}\n`;
+      }
+
+      // Add creatures at this location
+      if (locationCreatures.length > 0) {
+        const npcs = locationCreatures.filter(c => c.isNpc);
+        const enemies = locationCreatures.filter(c => !c.isNpc);
+
+        if (npcs.length > 0) {
+          context += `\nNPCs at this location:\n`;
+          npcs.forEach(npc => {
+            context += `- ${npc.name}${npc.challengeRating ? ` (CR ${npc.challengeRating})` : ''}`;
+            if (npc.description) {
+              context += `: ${npc.description.substring(0, 150)}${npc.description.length > 150 ? '...' : ''}`;
+            }
+            context += '\n';
+          });
+        }
+
+        if (enemies.length > 0) {
+          context += `\nPotential threats at this location:\n`;
+          enemies.forEach(enemy => {
+            context += `- ${enemy.name}${enemy.challengeRating ? ` (CR ${enemy.challengeRating})` : ''}`;
+            if (enemy.description) {
+              context += `: ${enemy.description.substring(0, 100)}${enemy.description.length > 100 ? '...' : ''}`;
+            }
+            context += '\n';
+          });
+        }
+      }
+    }
 
     // Add combat state if active
     if (combatActive && combatants.length > 0) {
@@ -353,7 +498,7 @@ export function SessionDMAssistant({
                   Ask about spells, rules, or get creative ideas!
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center">
-                  {SESSION_QUICK_PROMPTS.map((qp, i) => (
+                  {getQuickPrompts(locationInfo, locationCreatures).map((qp, i) => (
                     <button
                       key={i}
                       onClick={() => handleQuickPrompt(qp.prompt)}

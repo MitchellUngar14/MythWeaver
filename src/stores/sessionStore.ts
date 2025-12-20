@@ -23,6 +23,7 @@ export interface CombatantState {
   characterId?: string;
   templateId?: string;
   showHpToPlayers?: boolean; // DM toggle to reveal HP numbers to players
+  isCompanion?: boolean; // NPC/enemy fighting with the party
 }
 
 export interface SessionRoll {
@@ -52,6 +53,10 @@ interface SessionState {
   worldName: string;
   isActive: boolean;
   isDm: boolean;
+
+  // Current location
+  currentLocation: string | null;
+  currentLocationResourceId: string | null;
 
   // Participants
   participants: Participant[];
@@ -87,6 +92,9 @@ interface SessionState {
   addChatMessage: (message: ChatMessage) => void;
   addRoll: (roll: SessionRoll) => void;
 
+  // Location actions
+  setLocation: (location: string | null, resourceId: string | null) => void;
+
   // Reset
   reset: () => void;
 }
@@ -98,6 +106,8 @@ const initialState = {
   worldName: '',
   isActive: false,
   isDm: false,
+  currentLocation: null,
+  currentLocationResourceId: null,
   participants: [],
   combatActive: false,
   combatants: [],
@@ -188,6 +198,11 @@ export const useSessionStore = create<SessionState>((set) => ({
     return {
       recentRolls: [roll, ...state.recentRolls].slice(0, 50), // Keep last 50
     };
+  }),
+
+  setLocation: (location, resourceId) => set({
+    currentLocation: location,
+    currentLocationResourceId: resourceId,
   }),
 
   reset: () => set(initialState),

@@ -1,10 +1,133 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { google } from '@ai-sdk/google';
+import { openai } from '@ai-sdk/openai';
+import { anthropic } from '@ai-sdk/anthropic';
 import { streamText } from 'ai';
 import { db } from '@/lib/db';
 import { worlds, characters, gameSessions, actionLog } from '@/lib/schema';
 import { eq, desc } from 'drizzle-orm';
+
+// Available AI models configuration
+export const AI_MODELS = {
+  'gemini-2.5-flash': {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    provider: 'google',
+    description: 'Fast and efficient',
+  },
+  'gemini-2.0-flash': {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    provider: 'google',
+    description: 'Previous generation',
+  },
+  'gpt-4o-mini': {
+    id: 'gpt-4o-mini',
+    name: 'GPT-4o Mini',
+    provider: 'openai',
+    description: 'Fast and affordable',
+  },
+  'gpt-4o': {
+    id: 'gpt-4o',
+    name: 'GPT-4o',
+    provider: 'openai',
+    description: 'Most capable',
+  },
+  'gpt-4-turbo': {
+    id: 'gpt-4-turbo',
+    name: 'GPT-4 Turbo',
+    provider: 'openai',
+    description: 'Powerful reasoning',
+  },
+  'claude-sonnet-4-20250514': {
+    id: 'claude-sonnet-4-20250514',
+    name: 'Claude Sonnet 4',
+    provider: 'anthropic',
+    description: 'Balanced performance',
+  },
+  'claude-3-5-haiku-20241022': {
+    id: 'claude-3-5-haiku-20241022',
+    name: 'Claude 3.5 Haiku',
+    provider: 'anthropic',
+    description: 'Fast and affordable',
+  },
+} as const;
+
+export type ModelId = keyof typeof AI_MODELS;
+
+// Get the AI model based on the model ID
+function getModel(modelId: ModelId) {
+  const config = AI_MODELS[modelId];
+  if (!config) {
+    // Default to gemini
+    return google('gemini-2.5-flash');
+  }
+
+  switch (config.provider) {
+    case 'openai':
+      return openai(config.id);
+    case 'anthropic':
+      return anthropic(config.id);
+    case 'google':
+    default:
+      return google(config.id);
+  }
+}
+
+// Helper to check if an error is a rate limit error
+function isRateLimitError(error: any): boolean {
+  const errorString = JSON.stringify(error) + (error?.message || '') + (error?.cause?.message || '');
+  return (
+    error?.status === 429 ||
+    errorString.includes('429') ||
+    errorString.includes('RESOURCE_EXHAUSTED') ||
+    errorString.includes('quota') ||
+    errorString.includes('rate limit')
+  );
+}
+
+// Helper to get a user-friendly error message
+function getErrorMessage(error: any): string {
+  if (isRateLimitError(error)) {
+    return 'AI assistant is temporarily unavailable due to rate limits. Please try again in a minute.';
+  }
+  return error?.message || 'Failed to generate AI response';
+}
+
+// GET /api/ai/dm-assist - Get available models
+export async function GET() {
+  // Check which API keys are available
+  const hasGoogleKey = !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
+  const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+
+  // Filter models based on available API keys
+  const models = Object.entries(AI_MODELS)
+    .filter(([_, config]) => {
+      if (config.provider === 'google') return hasGoogleKey;
+      if (config.provider === 'openai') return hasOpenAIKey;
+      if (config.provider === 'anthropic') return hasAnthropicKey;
+      return false;
+    })
+    .map(([id, config]) => ({
+      id,
+      name: config.name,
+      provider: config.provider,
+      description: config.description,
+    }));
+
+  return new Response(JSON.stringify({
+    models,
+    availableProviders: {
+      google: hasGoogleKey,
+      openai: hasOpenAIKey,
+      anthropic: hasAnthropicKey,
+    }
+  }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 // POST /api/ai/dm-assist - AI DM assistant with streaming
 export async function POST(req: NextRequest) {
@@ -18,7 +141,10 @@ export async function POST(req: NextRequest) {
     }
 
 
-    const { message, worldId, context: customContext, conversationHistory = [] } = await req.json();
+    const { message, worldId, context: customContext, conversationHistory = [], model: requestedModel } = await req.json();
+
+    // Get the selected model (default to gemini-2.5-flash)
+    const modelId = (requestedModel && requestedModel in AI_MODELS) ? requestedModel as ModelId : 'gemini-2.5-flash';
 
     if (!message) {
       return new Response(JSON.stringify({ error: 'Message is required' }), {
@@ -144,17 +270,50 @@ ${context ? `\n\n## CURRENT CONTEXT\n${context}` : ''}`;
     ];
 
     // Stream the response using Vercel AI SDK
-    const result = streamText({
-      model: google('gemini-2.5-flash'),
-      system: systemPrompt,
-      messages,
-    });
+    try {
+      const result = streamText({
+        model: getModel(modelId),
+        system: systemPrompt,
+        messages,
+      });
 
-    return result.toTextStreamResponse();
-  } catch (error) {
-    console.error('AI DM assist error:', error);
-    return new Response(JSON.stringify({ error: 'Failed to generate response' }), {
-      status: 500,
+      // Create a custom stream that handles errors
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const chunk of result.textStream) {
+              controller.enqueue(new TextEncoder().encode(chunk));
+            }
+            controller.close();
+          } catch (streamError: any) {
+            console.error('Stream error:', streamError);
+            const errorMessage = getErrorMessage(streamError);
+            controller.enqueue(new TextEncoder().encode(`\n\n⚠️ ${errorMessage}`));
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+        },
+      });
+    } catch (aiError: any) {
+      console.error('AI SDK error:', aiError);
+      return new Response(JSON.stringify({
+        error: getErrorMessage(aiError)
+      }), {
+        status: isRateLimitError(aiError) ? 429 : 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  } catch (error: any) {
+    console.error('AI DM assist outer error:', error);
+    return new Response(JSON.stringify({
+      error: getErrorMessage(error)
+    }), {
+      status: isRateLimitError(error) ? 429 : 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }

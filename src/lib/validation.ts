@@ -99,6 +99,118 @@ export const createEnemyTemplateSchema = z.object({
   description: z.string().optional(),
   challengeRating: z.string().optional(),
   worldId: z.string().uuid().optional(),
+  // Location fields
+  location: z.string().max(200).optional(),
+  locationResourceId: z.string().uuid().optional(),
+});
+
+// NPC schema - extends enemy template with NPC-specific fields
+export const createNpcSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  stats: enemyStatsSchema,
+  abilities: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    type: z.enum(['action', 'bonus_action', 'reaction', 'passive', 'spell']),
+    uses: z.number().optional(),
+    maxUses: z.number().optional(),
+    recharge: z.string().optional(),
+  })).default([]),
+  description: z.string().optional(),
+  challengeRating: z.string().optional(),
+  worldId: z.string().uuid().optional(),
+  // Location fields
+  location: z.string().max(200).optional(),
+  locationResourceId: z.string().uuid().optional(),
+  // NPC-specific fields
+  isNpc: z.literal(true).default(true),
+  defaultHideHp: z.boolean().default(true), // NPCs default to hidden HP
+});
+
+// Item schemas
+export const itemPropertiesSchema = z.object({
+  // Weapon properties
+  damage: z.string().optional(),
+  damageType: z.string().optional(),
+  attackBonus: z.number().optional(),
+  range: z.object({
+    normal: z.number(),
+    long: z.number().optional(),
+  }).optional(),
+  isRanged: z.boolean().optional(),
+  weaponProperties: z.array(z.string()).optional(),
+  versatileDamage: z.string().optional(),
+  // Armor properties
+  acBonus: z.number().optional(),
+  armorType: z.enum(['light', 'medium', 'heavy', 'shield']).optional(),
+  maxDexBonus: z.number().optional(),
+  stealthDisadvantage: z.boolean().optional(),
+  strengthRequirement: z.number().optional(),
+  // Consumable properties
+  charges: z.number().optional(),
+  maxCharges: z.number().optional(),
+  effect: z.string().optional(),
+  // Custom properties
+  custom: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const createItemSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  description: z.string().optional(),
+  type: z.enum(['weapon', 'armor', 'shield', 'consumable', 'wondrous', 'misc']),
+  rarity: z.enum(['common', 'uncommon', 'rare', 'very_rare', 'legendary']).optional(),
+  weight: z.number().min(0).optional(),
+  value: z.number().min(0).optional(),
+  properties: itemPropertiesSchema.optional(),
+  requiresAttunement: z.boolean().default(false),
+  worldId: z.string().uuid(),
+});
+
+export const updateItemSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().optional(),
+  type: z.enum(['weapon', 'armor', 'shield', 'consumable', 'wondrous', 'misc']).optional(),
+  rarity: z.enum(['common', 'uncommon', 'rare', 'very_rare', 'legendary']).nullable().optional(),
+  weight: z.number().min(0).nullable().optional(),
+  value: z.number().min(0).nullable().optional(),
+  properties: itemPropertiesSchema.optional(),
+  requiresAttunement: z.boolean().optional(),
+});
+
+export const addCharacterItemSchema = z.object({
+  itemId: z.string().uuid(),
+  quantity: z.number().min(1).default(1),
+  equipped: z.boolean().default(false),
+  attuned: z.boolean().default(false),
+  notes: z.string().optional(),
+});
+
+export const updateCharacterItemSchema = z.object({
+  quantity: z.number().min(0).optional(), // 0 = remove
+  equipped: z.boolean().optional(),
+  attuned: z.boolean().optional(),
+  notes: z.string().optional(),
+});
+
+export const addEnemyItemSchema = z.object({
+  itemId: z.string().uuid(),
+  quantity: z.number().min(1).default(1),
+  equipped: z.boolean().default(false),
+});
+
+export const updateEnemyItemSchema = z.object({
+  quantity: z.number().min(0).optional(), // 0 = remove
+  equipped: z.boolean().optional(),
+});
+
+export const itemTransferSchema = z.object({
+  itemId: z.string().uuid(),
+  quantity: z.number().min(1),
+  fromType: z.enum(['world', 'character', 'enemy']),
+  fromId: z.string().uuid().optional(), // Required for character/enemy
+  toType: z.enum(['character', 'enemy']),
+  toId: z.string().uuid(),
 });
 
 // Dice schemas
@@ -117,6 +229,11 @@ export const updateSessionSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   notes: z.string().optional(),
   isActive: z.boolean().optional(),
+});
+
+export const updateSessionLocationSchema = z.object({
+  currentLocation: z.string().max(200).nullable(),
+  currentLocationResourceId: z.string().uuid().nullable().optional(),
 });
 
 export const statusEffectSchema = z.object({
@@ -158,10 +275,19 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type CreateCharacterInput = z.infer<typeof createCharacterSchema>;
 export type CreateWorldInput = z.infer<typeof createWorldSchema>;
 export type CreateEnemyTemplateInput = z.infer<typeof createEnemyTemplateSchema>;
+export type CreateNpcInput = z.infer<typeof createNpcSchema>;
 export type DiceRollInput = z.infer<typeof diceRollSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type UpdateSessionInput = z.infer<typeof updateSessionSchema>;
+export type UpdateSessionLocationInput = z.infer<typeof updateSessionLocationSchema>;
 export type AddCombatantInput = z.infer<typeof addCombatantSchema>;
 export type UpdateCombatantInput = z.infer<typeof updateCombatantSchema>;
 export type SessionRollInput = z.infer<typeof sessionRollSchema>;
 export type ChatMessageInput = z.infer<typeof chatMessageSchema>;
+export type CreateItemInput = z.infer<typeof createItemSchema>;
+export type UpdateItemInput = z.infer<typeof updateItemSchema>;
+export type AddCharacterItemInput = z.infer<typeof addCharacterItemSchema>;
+export type UpdateCharacterItemInput = z.infer<typeof updateCharacterItemSchema>;
+export type AddEnemyItemInput = z.infer<typeof addEnemyItemSchema>;
+export type UpdateEnemyItemInput = z.infer<typeof updateEnemyItemSchema>;
+export type ItemTransferInput = z.infer<typeof itemTransferSchema>;

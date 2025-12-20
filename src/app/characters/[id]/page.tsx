@@ -3,12 +3,13 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Save, Dice6, Plus, Trash2, Package, Globe } from 'lucide-react';
+import { ArrowLeft, Save, Dice6, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { calculateModifier, formatModifier, rollDice } from '@/lib/utils';
 import { AIAssistant } from '@/components/dm/AIAssistant';
+import { CharacterInventory } from '@/components/character/CharacterInventory';
 
 const CHARACTER_QUICK_PROMPTS = [
   { label: 'Backstory Ideas', prompt: 'Suggest a compelling backstory for my character based on their race and class.' },
@@ -19,13 +20,6 @@ const CHARACTER_QUICK_PROMPTS = [
 
 const CLASSES = ['Barbarian', 'Bard', 'Cleric', 'Druid', 'Fighter', 'Monk', 'Paladin', 'Ranger', 'Rogue', 'Sorcerer', 'Warlock', 'Wizard'];
 const RACES = ['Human', 'Elf', 'Dwarf', 'Halfling', 'Gnome', 'Half-Elf', 'Half-Orc', 'Tiefling', 'Dragonborn'];
-
-interface InventoryItem {
-  id: string;
-  name: string;
-  quantity: number;
-  description?: string;
-}
 
 interface Character {
   id: string;
@@ -47,7 +41,6 @@ interface Character {
     proficiencyBonus: number;
     hitDice: string;
   };
-  inventory: InventoryItem[];
   backstory: string | null;
   notes: string | null;
   world: {
@@ -75,13 +68,8 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
     str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
     hp: 10, maxHp: 10, ac: 10, speed: 30, proficiencyBonus: 2, hitDice: '1d8',
   });
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [backstory, setBackstory] = useState('');
   const [notes, setNotes] = useState('');
-
-  // New item form
-  const [newItemName, setNewItemName] = useState('');
-  const [newItemQuantity, setNewItemQuantity] = useState(1);
 
   useEffect(() => {
     fetchCharacter();
@@ -120,7 +108,6 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
         proficiencyBonus: char.stats?.proficiencyBonus || 2,
         hitDice: char.stats?.hitDice || '1d8',
       });
-      setInventory(char.inventory || []);
       setBackstory(char.backstory || '');
       setNotes(char.notes || '');
     } catch (err) {
@@ -151,30 +138,6 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
     setStats({ ...stats, [stat]: Math.max(0, Math.min(30, value)) });
   }
 
-  function addInventoryItem() {
-    if (!newItemName.trim()) return;
-
-    const newItem: InventoryItem = {
-      id: crypto.randomUUID(),
-      name: newItemName.trim(),
-      quantity: newItemQuantity,
-    };
-
-    setInventory([...inventory, newItem]);
-    setNewItemName('');
-    setNewItemQuantity(1);
-  }
-
-  function removeInventoryItem(itemId: string) {
-    setInventory(inventory.filter(item => item.id !== itemId));
-  }
-
-  function updateItemQuantity(itemId: string, quantity: number) {
-    setInventory(inventory.map(item =>
-      item.id === itemId ? { ...item, quantity: Math.max(0, quantity) } : item
-    ));
-  }
-
   async function handleSave() {
     setError('');
     setSuccessMessage('');
@@ -190,7 +153,6 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
           race,
           level,
           stats,
-          inventory,
           backstory,
           notes,
         }),
@@ -455,85 +417,11 @@ export default function EditCharacterPage({ params }: { params: Promise<{ id: st
           </Card>
 
           {/* Inventory */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Package className="w-5 h-5" />
-                Inventory
-              </CardTitle>
-              <CardDescription>Items and equipment</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* Add Item Form */}
-              {canEdit && (
-                <div className="flex gap-2 mb-4">
-                  <Input
-                    id="newItem"
-                    placeholder="Item name"
-                    value={newItemName}
-                    onChange={(e) => setNewItemName(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Input
-                    id="newItemQty"
-                    type="number"
-                    min={1}
-                    value={newItemQuantity}
-                    onChange={(e) => setNewItemQuantity(parseInt(e.target.value) || 1)}
-                    className="w-20"
-                  />
-                  <Button type="button" onClick={addInventoryItem}>
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Item List */}
-              {inventory.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                  No items in inventory
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {inventory.map(item => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-700/50 rounded-lg"
-                    >
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        {item.name}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {canEdit ? (
-                          <>
-                            <input
-                              type="number"
-                              min={0}
-                              value={item.quantity}
-                              onChange={(e) => updateItemQuantity(item.id, parseInt(e.target.value) || 0)}
-                              className="w-16 px-2 py-1 text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeInventoryItem(item.id)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </>
-                        ) : (
-                          <span className="text-gray-600 dark:text-gray-400">
-                            x{item.quantity}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <CharacterInventory
+            characterId={id}
+            worldId={character?.world?.id || null}
+            canEdit={canEdit}
+          />
 
           {/* Backstory */}
           <Card>

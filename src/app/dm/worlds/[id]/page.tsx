@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Globe, Users, Copy, Check, Settings,
-  Trash2, RefreshCw, User, Shield, Heart
+  Trash2, RefreshCw, User, Shield, Heart, MapPin
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -321,6 +321,12 @@ export default function WorldDetailPage({ params }: { params: Promise<{ id: stri
                   <Globe className="w-4 h-4 mr-2" />
                   Start Session
                 </Button>
+                <Link href={`/dm/worlds/${id}/locations`} className="block">
+                  <Button variant="outline" className="w-full justify-start">
+                    <MapPin className="w-4 h-4 mr-2" />
+                    Locations
+                  </Button>
+                </Link>
                 <Link href="/dm/enemies" className="block">
                   <Button variant="outline" className="w-full justify-start">
                     <Shield className="w-4 h-4 mr-2" />

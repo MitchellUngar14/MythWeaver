@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   X, Send, Sparkles, Copy, Check,
-  ChevronDown, Loader2, Trash2
+  ChevronDown, Loader2, Trash2, Settings2, Cpu
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
@@ -14,6 +14,13 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface AIModel {
+  id: string;
+  name: string;
+  provider: string;
+  description: string;
 }
 
 const DEFAULT_QUICK_PROMPTS: QuickPrompt[] = [
@@ -36,11 +43,50 @@ export function AIAssistant({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [models, setModels] = useState<AIModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ai-model') || 'gemini-2.5-flash';
+    }
+    return 'gemini-2.5-flash';
+  });
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch available models on mount
+  useEffect(() => {
+    async function fetchModels() {
+      try {
+        const res = await fetch('/api/ai/dm-assist');
+        const data = await res.json();
+        if (data.models) {
+          setModels(data.models);
+        }
+      } catch (err) {
+        console.error('Failed to fetch models:', err);
+      }
+    }
+    fetchModels();
+  }, []);
+
+  // Save selected model to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ai-model', selectedModel);
+    }
+  }, [selectedModel]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Handle /model command
+  useEffect(() => {
+    if (input.toLowerCase() === '/model' || input.toLowerCase() === '/models') {
+      setShowModelPicker(true);
+      setInput('');
+    }
+  }, [input]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,6 +110,7 @@ export function AIAssistant({
           message: userMessage.content,
           worldId,
           context,
+          model: selectedModel,
           conversationHistory: messages.map(m => ({
             role: m.role,
             content: m.content,
@@ -72,6 +119,17 @@ export function AIAssistant({
       });
 
       if (!response.ok) {
+        // Check for rate limit error
+        if (response.status === 429) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Rate limit exceeded. Please wait a moment and try again.');
+        }
+        // Check for JSON error response
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('application/json')) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to get response');
+        }
         throw new Error('Failed to get response');
       }
 
@@ -89,28 +147,48 @@ export function AIAssistant({
       setMessages(prev => [...prev, assistantMessage]);
 
       if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          assistantContent += chunk;
+            const chunk = decoder.decode(value, { stream: true });
 
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantMessage.id
-                ? { ...m, content: assistantContent }
-                : m
-            )
-          );
+            // Check if we received a JSON error response instead of a stream
+            if (assistantContent === '' && chunk.trim().startsWith('{')) {
+              try {
+                const errorData = JSON.parse(chunk);
+                if (errorData.error) {
+                  throw new Error(errorData.error);
+                }
+              } catch (parseErr) {
+                // Not JSON or not an error, continue as normal stream
+              }
+            }
+
+            assistantContent += chunk;
+
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMessage.id
+                  ? { ...m, content: assistantContent }
+                  : m
+              )
+            );
+          }
+        } catch (streamError: any) {
+          // Remove the empty assistant message and re-throw
+          setMessages(prev => prev.filter(m => m.id !== assistantMessage.id));
+          throw streamError;
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI request failed:', error);
+      const errorMessage = error?.message || 'Sorry, I encountered an error. Please try again.';
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: `⚠️ ${errorMessage}`,
       }]);
     } finally {
       setIsLoading(false);
@@ -158,22 +236,34 @@ export function AIAssistant({
       {isOpen && (
         <div className="fixed bottom-24 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[600px]">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-purple-600" />
-              <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
-            </div>
-            <div className="flex items-center gap-1">
-              {messages.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={clearChat}>
-                  <Trash2 className="w-4 h-4" />
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+                <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
+              </div>
+              <div className="flex items-center gap-1">
+                {messages.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={clearChat}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => setIsOpen(false)}>
+                  <X className="w-4 h-4" />
                 </Button>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => setIsOpen(false)}>
-                <X className="w-4 h-4" />
-              </Button>
+              </div>
             </div>
+            {/* Model selector row */}
+            <button
+              onClick={() => setShowModelPicker(true)}
+              className="mt-2 flex items-center gap-1.5 text-xs text-gray-500 hover:text-purple-600 transition-colors"
+            >
+              <Cpu className="w-3 h-3" />
+              <span>{models.find(m => m.id === selectedModel)?.name || selectedModel}</span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
           </div>
+
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -268,6 +358,63 @@ export function AIAssistant({
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {/* Model Picker Modal */}
+      {showModelPicker && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-purple-600" />
+                <h3 className="font-semibold text-gray-900 dark:text-white">Select AI Model</h3>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowModelPicker(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-4 space-y-2 max-h-80 overflow-y-auto">
+              {models.map(model => (
+                <button
+                  key={model.id}
+                  onClick={() => {
+                    setSelectedModel(model.id);
+                    setShowModelPicker(false);
+                    setMessages(prev => [...prev, {
+                      id: crypto.randomUUID(),
+                      role: 'assistant',
+                      content: `Switched to **${model.name}** (${model.provider})`,
+                    }]);
+                  }}
+                  className={`w-full p-3 rounded-lg border-2 text-left transition-colors ${
+                    selectedModel === model.id
+                      ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${
+                      model.provider === 'openai' ? 'bg-green-500' : 'bg-blue-500'
+                    }`} />
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {model.name}
+                    </span>
+                    {selectedModel === model.id && (
+                      <Check className="w-4 h-4 text-purple-600 ml-auto" />
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 ml-4">
+                    {model.provider === 'openai' ? 'OpenAI' : 'Google'} • {model.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs text-gray-400 text-center">
+                Tip: Type <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">/model</code> to open this
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </>

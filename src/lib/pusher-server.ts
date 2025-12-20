@@ -35,4 +35,5 @@ export const SessionEvents = {
   ROLL_MADE: 'roll:made',
   CHAT_MESSAGE: 'chat:message',
   SESSION_ENDED: 'session:ended',
+  LOCATION_CHANGED: 'location:changed',
 } as const;

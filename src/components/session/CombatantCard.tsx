@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Heart, Shield, Trash2, Skull, Eye, EyeOff } from 'lucide-react';
+import { Heart, Shield, Trash2, Skull, Eye, EyeOff, Users, Swords } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { CombatantState } from '@/stores/sessionStore';
@@ -75,9 +75,11 @@ export function CombatantCard({
           <span className={`text-xs px-1.5 py-0.5 rounded ${
             combatant.type === 'character'
               ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+              : combatant.isCompanion
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
           }`}>
-            {combatant.type === 'character' ? 'Player' : 'Enemy'}
+            {combatant.type === 'character' ? 'Player' : combatant.isCompanion ? 'Companion' : 'Enemy'}
           </span>
         </div>
         <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
@@ -200,26 +202,43 @@ export function CombatantCard({
       {isDm && (
         <div className="flex justify-end gap-1">
           {combatant.type === 'enemy' && (
+            <>
+              <span title={combatant.isCompanion ? "Mark as enemy" : "Mark as companion"}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={combatant.isCompanion
+                    ? "text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                    : "text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"}
+                  onClick={() => onUpdate({ isCompanion: !combatant.isCompanion })}
+                >
+                  {combatant.isCompanion ? <Users className="w-4 h-4" /> : <Swords className="w-4 h-4" />}
+                </Button>
+              </span>
+              <span title={combatant.showHpToPlayers ? "Hide HP from players" : "Reveal HP to players"}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={combatant.showHpToPlayers
+                    ? "text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                    : "text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"}
+                  onClick={() => onUpdate({ showHpToPlayers: !combatant.showHpToPlayers })}
+                >
+                  {combatant.showHpToPlayers ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </Button>
+              </span>
+            </>
+          )}
+          <span title="Remove from combat">
             <Button
               variant="ghost"
               size="sm"
-              className={combatant.showHpToPlayers
-                ? "text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
-                : "text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"}
-              onClick={() => onUpdate({ showHpToPlayers: !combatant.showHpToPlayers })}
-              title={combatant.showHpToPlayers ? "Hide HP from players" : "Reveal HP to players"}
+              className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+              onClick={onRemove}
             >
-              {combatant.showHpToPlayers ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              <Trash2 className="w-4 h-4" />
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-            onClick={onRemove}
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
+          </span>
         </div>
       )}
     </div>

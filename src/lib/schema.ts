@@ -75,6 +75,11 @@ export const gameSessions = pgTable('game_sessions', {
   sessionNumber: integer('session_number').default(1),
   notes: text('notes'),
   isActive: boolean('is_active').default(true),
+  combatRound: integer('combat_round').default(0),
+  currentTurnId: uuid('current_turn_id'),
+  // Current session location
+  currentLocation: varchar('current_location', { length: 200 }),
+  currentLocationResourceId: uuid('current_location_resource_id').references(() => worldResources.id, { onDelete: 'set null' }),
   startedAt: timestamp('started_at').defaultNow(),
   endedAt: timestamp('ended_at'),
 }, (table) => [
@@ -85,6 +90,7 @@ export const gameSessions = pgTable('game_sessions', {
 export const worldResources = pgTable('world_resources', {
   id: uuid('id').primaryKey().defaultRandom(),
   worldId: uuid('world_id').references(() => worlds.id, { onDelete: 'cascade' }).notNull(),
+  parentId: uuid('parent_id'), // Self-reference for hierarchical locations (e.g., "Tavern" under "Bludhaven")
   type: varchar('type', { length: 50 }).notNull(), // 'npc', 'location', 'lore', 'item', 'faction'
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
@@ -95,9 +101,10 @@ export const worldResources = pgTable('world_resources', {
 }, (table) => [
   index('idx_world_resources_world').on(table.worldId),
   index('idx_world_resources_type').on(table.worldId, table.type),
+  index('idx_world_resources_parent').on(table.parentId),
 ]);
 
-// Enemy templates (DM-created, reusable across worlds)
+// Enemy templates (DM-created, reusable across worlds) - also used for NPCs
 export const enemyTemplates = pgTable('enemy_templates', {
   id: uuid('id').primaryKey().defaultRandom(),
   dmId: uuid('dm_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -107,9 +114,16 @@ export const enemyTemplates = pgTable('enemy_templates', {
   abilities: jsonb('abilities').default([]).$type<Ability[]>(),
   description: text('description'),
   challengeRating: varchar('challenge_rating', { length: 10 }),
+  // NPC-specific fields
+  isNpc: boolean('is_npc').default(false),
+  defaultHideHp: boolean('default_hide_hp').default(false),
+  // Location fields (for both enemies and NPCs)
+  location: varchar('location', { length: 200 }),
+  locationResourceId: uuid('location_resource_id').references(() => worldResources.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),
 }, (table) => [
   index('idx_enemy_templates_dm').on(table.dmId),
+  index('idx_enemy_templates_npc').on(table.isNpc),
 ]);
 
 // Combat instances (active enemies in session)
@@ -125,6 +139,7 @@ export const combatInstances = pgTable('combat_instances', {
   position: integer('position'), // initiative order
   isActive: boolean('is_active').default(true),
   showHpToPlayers: boolean('show_hp_to_players').default(false),
+  isCompanion: boolean('is_companion').default(false), // NPC fighting with the party
 }, (table) => [
   index('idx_combat_session').on(table.sessionId),
 ]);
@@ -190,6 +205,54 @@ export const chatMessages = pgTable('chat_messages', {
   index('idx_chat_messages_session').on(table.sessionId),
 ]);
 
+// Items (DM-created item templates for a world)
+export const items = pgTable('items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  worldId: uuid('world_id').references(() => worlds.id, { onDelete: 'cascade' }).notNull(),
+  dmId: uuid('dm_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  type: varchar('type', { length: 50 }).notNull(), // weapon, armor, shield, consumable, wondrous, misc
+  rarity: varchar('rarity', { length: 20 }), // common, uncommon, rare, very_rare, legendary
+  weight: integer('weight'), // in tenths of pounds (e.g., 30 = 3.0 lbs)
+  value: integer('value'), // in copper pieces for precision
+  properties: jsonb('properties').default({}).$type<ItemProperties>(),
+  requiresAttunement: boolean('requires_attunement').default(false),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_items_world').on(table.worldId),
+  index('idx_items_dm').on(table.dmId),
+  index('idx_items_type').on(table.type),
+]);
+
+// Character items (junction table for character inventory)
+export const characterItems = pgTable('character_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  characterId: uuid('character_id').references(() => characters.id, { onDelete: 'cascade' }).notNull(),
+  itemId: uuid('item_id').references(() => items.id, { onDelete: 'cascade' }).notNull(),
+  quantity: integer('quantity').default(1).notNull(),
+  equipped: boolean('equipped').default(false),
+  attuned: boolean('attuned').default(false),
+  notes: text('notes'),
+  acquiredAt: timestamp('acquired_at').defaultNow(),
+}, (table) => [
+  index('idx_character_items_character').on(table.characterId),
+  index('idx_character_items_item').on(table.itemId),
+]);
+
+// Enemy/NPC items (junction table for enemy template inventory)
+export const enemyItems = pgTable('enemy_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  templateId: uuid('template_id').references(() => enemyTemplates.id, { onDelete: 'cascade' }).notNull(),
+  itemId: uuid('item_id').references(() => items.id, { onDelete: 'cascade' }).notNull(),
+  quantity: integer('quantity').default(1).notNull(),
+  equipped: boolean('equipped').default(false),
+}, (table) => [
+  index('idx_enemy_items_template').on(table.templateId),
+  index('idx_enemy_items_item').on(table.itemId),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   characters: many(characters),
@@ -216,10 +279,12 @@ export const charactersRelations = relations(characters, ({ one, many }) => ({
   user: one(users, { fields: [characters.userId], references: [users.id] }),
   world: one(worlds, { fields: [characters.worldId], references: [worlds.id] }),
   history: many(characterHistory),
+  items: many(characterItems),
 }));
 
 export const gameSessionsRelations = relations(gameSessions, ({ one, many }) => ({
   world: one(worlds, { fields: [gameSessions.worldId], references: [worlds.id] }),
+  currentLocationResource: one(worldResources, { fields: [gameSessions.currentLocationResourceId], references: [worldResources.id] }),
   combatInstances: many(combatInstances),
   diceRolls: many(diceRolls),
   actionLogs: many(actionLog),
@@ -257,15 +322,36 @@ export const actionLogRelations = relations(actionLog, ({ one }) => ({
 export const enemyTemplatesRelations = relations(enemyTemplates, ({ one, many }) => ({
   dm: one(users, { fields: [enemyTemplates.dmId], references: [users.id] }),
   world: one(worlds, { fields: [enemyTemplates.worldId], references: [worlds.id] }),
+  locationResource: one(worldResources, { fields: [enemyTemplates.locationResourceId], references: [worldResources.id] }),
   combatInstances: many(combatInstances),
+  items: many(enemyItems),
 }));
 
-export const worldResourcesRelations = relations(worldResources, ({ one }) => ({
+export const worldResourcesRelations = relations(worldResources, ({ one, many }) => ({
   world: one(worlds, { fields: [worldResources.worldId], references: [worlds.id] }),
+  parent: one(worldResources, { fields: [worldResources.parentId], references: [worldResources.id], relationName: 'parentChild' }),
+  children: many(worldResources, { relationName: 'parentChild' }),
 }));
 
 export const characterHistoryRelations = relations(characterHistory, ({ one }) => ({
   character: one(characters, { fields: [characterHistory.characterId], references: [characters.id] }),
+}));
+
+export const itemsRelations = relations(items, ({ one, many }) => ({
+  world: one(worlds, { fields: [items.worldId], references: [worlds.id] }),
+  dm: one(users, { fields: [items.dmId], references: [users.id] }),
+  characterItems: many(characterItems),
+  enemyItems: many(enemyItems),
+}));
+
+export const characterItemsRelations = relations(characterItems, ({ one }) => ({
+  character: one(characters, { fields: [characterItems.characterId], references: [characters.id] }),
+  item: one(items, { fields: [characterItems.itemId], references: [items.id] }),
+}));
+
+export const enemyItemsRelations = relations(enemyItems, ({ one }) => ({
+  template: one(enemyTemplates, { fields: [enemyItems.templateId], references: [enemyTemplates.id] }),
+  item: one(items, { fields: [enemyItems.itemId], references: [items.id] }),
 }));
 
 // TypeScript types for JSONB columns
@@ -327,6 +413,32 @@ export interface StatusEffect {
   description?: string;
 }
 
+export interface ItemProperties {
+  // Weapon properties
+  damage?: string; // e.g., "1d8", "2d6"
+  damageType?: string; // slashing, piercing, bludgeoning, fire, etc.
+  attackBonus?: number; // +1, +2, +3 magical bonus
+  range?: { normal: number; long?: number }; // for ranged weapons
+  isRanged?: boolean;
+  weaponProperties?: string[]; // finesse, versatile, two-handed, light, heavy, reach, thrown, loading, ammunition
+  versatileDamage?: string; // damage when used two-handed
+
+  // Armor properties
+  acBonus?: number; // base AC or bonus
+  armorType?: 'light' | 'medium' | 'heavy' | 'shield';
+  maxDexBonus?: number; // max dex modifier for medium armor
+  stealthDisadvantage?: boolean;
+  strengthRequirement?: number;
+
+  // Consumable properties
+  charges?: number;
+  maxCharges?: number;
+  effect?: string; // description of what it does
+
+  // Custom properties
+  custom?: Record<string, unknown>;
+}
+
 // Type exports for use in the app
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -341,3 +453,7 @@ export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type CombatInstance = typeof combatInstances.$inferSelect;
 export type DiceRoll = typeof diceRolls.$inferSelect;
+export type Item = typeof items.$inferSelect;
+export type NewItem = typeof items.$inferInsert;
+export type CharacterItem = typeof characterItems.$inferSelect;
+export type EnemyItem = typeof enemyItems.$inferSelect;

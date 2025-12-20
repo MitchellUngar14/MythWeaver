@@ -130,6 +130,14 @@ export function useRealtime(sessionId: string | null) {
       store.setSession({ isActive: false });
     });
 
+    // Location events
+    channel.bind(SessionEvents.LOCATION_CHANGED, (data: {
+      currentLocation: string | null;
+      currentLocationResourceId: string | null;
+    }) => {
+      store.setLocation(data.currentLocation, data.currentLocationResourceId);
+    });
+
     return () => {
       channel.unbind_all();
       pusher.unsubscribe(channelName);
