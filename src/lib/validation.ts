@@ -416,6 +416,11 @@ export const chatMessageSchema = z.object({
   content: z.string().min(1, 'Message cannot be empty').max(1000),
 });
 
+// Rest action schema
+export const restActionSchema = z.object({
+  type: z.enum(['short', 'long']),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type CreateCharacterInput = z.infer<typeof createCharacterSchema>;

@@ -18,7 +18,9 @@ import { SessionLocationSelector } from '@/components/session/SessionLocationSel
 import { LocationCreaturesCard } from '@/components/session/LocationCreaturesCard';
 import { ItemTransferModal } from '@/components/session/ItemTransferModal';
 import { PartyInventoryCard } from '@/components/session/PartyInventoryCard';
-import { Package } from 'lucide-react';
+import { Package, Moon, Sunrise } from 'lucide-react';
+import { getPusherClient, SessionEvents } from '@/lib/pusher-client';
+import type { SpellSlots } from '@/lib/schema';
 import { Button } from '@/components/ui/button';
 import type { Character } from '@/lib/schema';
 
@@ -72,6 +74,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [userCharacter, setUserCharacter] = useState<Character | null>(null);
   const [dmId, setDmId] = useState<string>('');
   const [showItemTransfer, setShowItemTransfer] = useState(false);
+  const [isResting, setIsResting] = useState<'short' | 'long' | null>(null);
 
   const store = useSessionStore();
   const { isConnected } = useRealtime(store.sessionId);
@@ -412,6 +415,109 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     }
   }
 
+  async function handleShortRest() {
+    setIsResting('short');
+    try {
+      const res = await fetch(`/api/sessions/${id}/rest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'short' }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        console.error('Short rest failed:', data.error);
+      }
+    } catch (err) {
+      console.error('Short rest error:', err);
+    } finally {
+      setIsResting(null);
+    }
+  }
+
+  async function handleLongRest() {
+    setIsResting('long');
+    try {
+      const res = await fetch(`/api/sessions/${id}/rest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'long' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Update local character state if user is a player with a character
+        if (userCharacter && data.affectedCharacters) {
+          const updated = data.affectedCharacters.find(
+            (c: { characterId: string }) => c.characterId === userCharacter.id
+          );
+          if (updated) {
+            setUserCharacter({
+              ...userCharacter,
+              stats: {
+                ...userCharacter.stats,
+                hp: updated.hp,
+                spellcasting: userCharacter.stats.spellcasting ? {
+                  ...userCharacter.stats.spellcasting,
+                  spellSlots: updated.spellSlots || userCharacter.stats.spellcasting.spellSlots,
+                } : undefined,
+              },
+            });
+          }
+        }
+      } else {
+        const data = await res.json();
+        console.error('Long rest failed:', data.error);
+      }
+    } catch (err) {
+      console.error('Long rest error:', err);
+    } finally {
+      setIsResting(null);
+    }
+  }
+
+  // Listen for REST_COMPLETED events to update player character state
+  useEffect(() => {
+    if (!store.sessionId) return;
+
+    const pusher = getPusherClient();
+    if (!pusher) return;
+
+    const channel = pusher.channel(`private-session-${store.sessionId}`);
+    if (!channel) return;
+
+    const handleRestCompleted = (data: {
+      restType: 'short' | 'long';
+      affectedCharacters: Array<{
+        characterId: string;
+        hp: number;
+        maxHp: number;
+        spellSlots: SpellSlots | null;
+      }>;
+    }) => {
+      if (data.restType === 'long' && userCharacter) {
+        const updated = data.affectedCharacters.find(c => c.characterId === userCharacter.id);
+        if (updated) {
+          setUserCharacter(prev => prev ? {
+            ...prev,
+            stats: {
+              ...prev.stats,
+              hp: updated.hp,
+              spellcasting: prev.stats.spellcasting ? {
+                ...prev.stats.spellcasting,
+                spellSlots: updated.spellSlots || prev.stats.spellcasting.spellSlots,
+              } : undefined,
+            },
+          } : null);
+        }
+      }
+    };
+
+    channel.bind(SessionEvents.REST_COMPLETED, handleRestCompleted);
+
+    return () => {
+      channel.unbind(SessionEvents.REST_COMPLETED, handleRestCompleted);
+    };
+  }, [store.sessionId, userCharacter?.id]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -531,6 +637,30 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                   <Package className="w-4 h-4 mr-2" />
                   Give Item to Player
                 </Button>
+
+                {/* Rest Buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleShortRest}
+                    variant="outline"
+                    className="flex-1"
+                    isLoading={isResting === 'short'}
+                    disabled={isResting !== null || !store.isActive}
+                  >
+                    <Moon className="w-4 h-4 mr-2" />
+                    Short Rest
+                  </Button>
+                  <Button
+                    onClick={handleLongRest}
+                    variant="outline"
+                    className="flex-1"
+                    isLoading={isResting === 'long'}
+                    disabled={isResting !== null || !store.isActive}
+                  >
+                    <Sunrise className="w-4 h-4 mr-2" />
+                    Long Rest
+                  </Button>
+                </div>
 
                 {/* Party Inventory - shows all character inventories */}
                 <PartyInventoryCard

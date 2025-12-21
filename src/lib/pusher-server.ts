@@ -37,4 +37,5 @@ export const SessionEvents = {
   CHAT_MESSAGE: 'chat:message',
   SESSION_ENDED: 'session:ended',
   LOCATION_CHANGED: 'location:changed',
+  REST_COMPLETED: 'rest:completed',
 } as const;
